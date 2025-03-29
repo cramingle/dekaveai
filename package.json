@@ -1,0 +1,39 @@
+{
+  "name": "dekave",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build --turbopack",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@next-auth/supabase-adapter": "^0.2.1",
+    "@stripe/stripe-js": "^3.0.10",
+    "@supabase/supabase-js": "^2.39.8",
+    "@vercel/analytics": "^1.5.0",
+    "@vercel/blob": "^0.22.3",
+    "framer-motion": "^12.6.2",
+    "gpt-tokenizer": "^2.9.0",
+    "next": "15.2.4",
+    "next-auth": "^4.24.11",
+    "next-connect": "^1.0.0",
+    "openai": "^4.90.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-dropzone": "^14.2.3",
+    "stripe": "^15.5.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.2.4",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

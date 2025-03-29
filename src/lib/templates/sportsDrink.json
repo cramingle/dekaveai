@@ -1,0 +1,118 @@
+{
+  "brand_style_profile": {
+    "messaging_style": {
+      "tone": "energetic, bold, and motivational",
+      "key_phrases_style": "short, punchy, and action-oriented",
+      "examples_of_phrasing": [
+        "Take Now Your [Product]",
+        "Official Combine Sponsor",
+        "Summer Flavour",
+        "Online Sale"
+      ],
+      "call_to_action": "direct and prominent, encouraging immediate engagement",
+      "text_placement": "often centered or at the top/bottom for emphasis"
+    },
+    "typography": {
+      "font_style": "bold, sans-serif, modern",
+      "font_size_hierarchy": {
+        "primary_headline": "large, dominant, often in all caps",
+        "secondary_text": "medium, sometimes italicized or in a lighter weight",
+        "supporting_text": "small, used for functional details"
+      },
+      "text_colors": [
+        "white",
+        "black",
+        "neon accents (e.g., green, blue)"
+      ],
+      "text_effects": [
+        "glow or shadow for emphasis",
+        "3D effect on some text",
+        "slanted or angled text for dynamic feel"
+      ]
+    },
+    "color_scheme": {
+      "primary_colors": [
+        "bright blue",
+        "white",
+        "neon green"
+      ],
+      "secondary_colors": [
+        "red",
+        "yellow",
+        "black"
+      ],
+      "background_style": "gradient or solid with a cool-toned base (e.g., blue to white)",
+      "accent_elements": "neon or vibrant pops of color for energy"
+    },
+    "product_placement": {
+      "positioning": "central and prominent, often slightly tilted or angled for dynamism",
+      "quantity": "1-3 products in focus, sometimes with additional products in the background",
+      "surrounding_elements": [
+        "ice cubes",
+        "splashing water",
+        "fruit slices (e.g., lemons, limes)",
+        "leaves or natural elements"
+      ],
+      "product_scale": "larger than life, dominating the composition",
+      "product_effects": [
+        "glow or light reflection",
+        "motion blur or dynamic angles",
+        "layered or 3D effect"
+      ]
+    },
+    "background_elements": {
+      "style": "clean and modern with a refreshing vibe",
+      "common_elements": [
+        "abstract patterns (e.g., faint grid or geometric shapes)",
+        "natural elements (e.g., leaves, fruit slices)",
+        "ice or frost effects",
+        "splashing water or liquid motion"
+      ],
+      "background_opacity": "semi-transparent to keep focus on the product",
+      "perspective": "often a slight 3D or depth effect"
+    },
+    "imagery_and_visuals": {
+      "product_focus": "beverage containers (cans or bottles)",
+      "supporting_imagery": [
+        "athletes or active individuals (e.g., in sports uniforms)",
+        "sports equipment (e.g., soccer balls)",
+        "refreshing elements (e.g., ice, water, fruit)"
+      ],
+      "visual_effects": [
+        "motion blur for energy",
+        "light flares or glows",
+        "vibrant color overlays"
+      ],
+      "composition_style": "dynamic and layered, with overlapping elements"
+    },
+    "branding_elements": {
+      "logo_placement": "top left or top right corner, small but visible",
+      "social_media_handles": "bottom or side, in a bold font with '@' symbol",
+      "partnership_indicators": "small text or logo indicating sponsorships (e.g., 'Official Combine Sponsor')",
+      "branding_repetition": "brand name repeated subtly in the background (e.g., as a watermark or pattern)"
+    },
+    "layout_structure": {
+      "primary_focus": "product at the center or slightly off-center",
+      "text_distribution": {
+        "headline": "top or bottom, large and bold",
+        "supporting_text": "near the product or in corners",
+        "call_to_action": "bottom or side, often circled or highlighted"
+      },
+      "balance": "asymmetrical but balanced, with a sense of motion",
+      "white_space": "minimal, used strategically to avoid clutter"
+    },
+    "target_audience_vibe": {
+      "demographic": "young, active, and energetic individuals",
+      "lifestyle": "sports-oriented, health-conscious, trendy",
+      "emotional_appeal": "refreshment, energy, and performance"
+    },
+    "additional_elements": {
+      "icons_and_labels": [
+        "small functional labels (e.g., 'Hydration Drink', '100 Calories')",
+        "sale or promotion badges (e.g., 'Online Sale')"
+      ],
+      "interactive_elements": "QR codes or social media prompts",
+      "seasonal_themes": "use of seasonal cues (e.g., 'Summer Flavour')"
+    }
+  }
+} 
