@@ -15,6 +15,7 @@ type UserAuth = {
   isAuthenticated: boolean;
   user: any | null;
   tokens: number;
+  tokensExpiryDate?: string;
   tier: 'free' | 'basic' | 'pro' | 'enterprise';
   isLoading: boolean;
   signInWithGoogle: () => Promise<void>;
@@ -23,6 +24,7 @@ type UserAuth = {
   logout: () => Promise<void>;
   refreshTokenCount: () => Promise<void>;
   buyTokens: (packageId: string) => Promise<{ success: boolean; error?: string }>;
+  tokensExpired: () => boolean;
 };
 
 // Create the auth context
@@ -34,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [user, setUser] = useState<any | null>(null);
   const [tokens, setTokens] = useState<number>(0);
+  const [tokensExpiryDate, setTokensExpiryDate] = useState<string | undefined>(undefined);
   const [tier, setTier] = useState<'free' | 'basic' | 'pro' | 'enterprise'>('free');
   const isLoading = status === 'loading';
 
@@ -43,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsAuthenticated(true);
       setUser(session.user);
       setTokens(session.user.tokens || 0);
+      setTokensExpiryDate(session.user.tokens_expiry_date);
       setTier(session.user.tier || 'free');
     } else {
       // Check for mock auth in development mode
@@ -55,7 +59,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const mockUser = JSON.parse(mockUserStr);
             setIsAuthenticated(true);
             setUser(mockUser);
-            setTokens(mockUser.tokens || 3);
+            setTokens(mockUser.tokens || 100000);
+            setTokensExpiryDate(mockUser.tokens_expiry_date);
             setTier(mockUser.tier || 'free');
             return; // Skip the reset below
           } catch (e) {
@@ -68,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsAuthenticated(false);
       setUser(null);
       setTokens(0);
+      setTokensExpiryDate(undefined);
       setTier('free');
     }
   }, [session]);
@@ -78,13 +84,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (process.env.NODE_ENV === 'development') {
       console.log('Development mode: Simulating Google sign-in');
       
+      // Create expiry date (28 days from now)
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + 28);
+      
       // Create a mock user
       const mockUser = {
         id: 'dev-user-123',
         name: 'Dev User',
         email: 'dev@example.com',
         image: null,
-        tokens: 3, // Free tier default
+        tokens: 100000, // Free tier default (100k tokens)
+        tokens_expiry_date: expiryDate.toISOString(),
         tier: 'free' as 'free' | 'basic' | 'pro' | 'enterprise'
       };
       
@@ -92,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsAuthenticated(true);
       setUser(mockUser);
       setTokens(mockUser.tokens);
+      setTokensExpiryDate(mockUser.tokens_expiry_date);
       setTier(mockUser.tier);
       
       // Also store in localStorage for persistence
@@ -167,6 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsAuthenticated(false);
       setUser(null);
       setTokens(0);
+      setTokensExpiryDate(undefined);
       setTier('free');
       
       // Reload page to refresh UI
@@ -190,6 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const mockUser = JSON.parse(mockUserStr);
           console.log('Retrieved tokens from localStorage:', mockUser.tokens);
           setTokens(mockUser.tokens || 0);
+          setTokensExpiryDate(mockUser.tokens_expiry_date);
           setTier(mockUser.tier || 'free');
           return;
         }
@@ -216,6 +230,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       if (!error && data) {
         setTokens(data.tokens);
+        setTokensExpiryDate(data.tokens_expiry_date);
         setTier(data.tier);
       }
     } catch (error) {
@@ -231,7 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Parse token subtraction command
       if (packageId.startsWith('subtract-')) {
-        const amount = parseInt(packageId.replace('subtract-', '')) || 1;
+        const amount = parseInt(packageId.replace('subtract-', '')) || 10000;
         console.log(`Subtracting ${amount} tokens from current ${tokens}. New count: ${Math.max(0, tokens - amount)}`);
         
         // Update the state immediately
@@ -258,24 +273,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Token package definitions
       const tokenPackages = [
-        { id: 'basic', tokens: 10, tier: 'basic' as const },
-        { id: 'value', tokens: 25, tier: 'basic' as const },
-        { id: 'pro', tokens: 70, tier: 'pro' as const },
-        { id: 'plus', tokens: 150, tier: 'pro' as const },
-        { id: 'elite', tokens: 350, tier: 'enterprise' as const },
-        { id: 'max', tokens: 1000, tier: 'enterprise' as const },
+        { id: 'basic', tokens: 100000, tier: 'basic' as const },
+        { id: 'value', tokens: 250000, tier: 'basic' as const },
+        { id: 'pro', tokens: 600000, tier: 'pro' as const },
+        { id: 'max', tokens: 1000000, tier: 'enterprise' as const },
       ];
       
       const selectedPackage = tokenPackages.find(pkg => pkg.id === packageId);
       
       if (selectedPackage) {
+        // Create expiry date (28 days from now)
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() + 28);
+        
         setTokens(tokens + selectedPackage.tokens);
+        setTokensExpiryDate(expiryDate.toISOString());
         setTier(selectedPackage.tier);
+        
+        // Update mockUser in localStorage
+        if (localStorage.getItem('mockAuth') === 'true') {
+          try {
+            const mockUserStr = localStorage.getItem('mockUser');
+            if (mockUserStr) {
+              const mockUser = JSON.parse(mockUserStr);
+              mockUser.tokens = tokens + selectedPackage.tokens;
+              mockUser.tokens_expiry_date = expiryDate.toISOString();
+              mockUser.tier = selectedPackage.tier;
+              localStorage.setItem('mockUser', JSON.stringify(mockUser));
+            }
+          } catch (e) {
+            console.error('Error updating mock user in localStorage', e);
+          }
+        }
+        
         return { success: true };
       }
       
-      // Default behavior - add 10 tokens
-      setTokens(tokens + 10);
+      // Default behavior - add 100,000 tokens
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + 28);
+      setTokens(tokens + 100000);
+      setTokensExpiryDate(expiryDate.toISOString());
+      
+      // Update mockUser in localStorage
+      if (localStorage.getItem('mockAuth') === 'true') {
+        try {
+          const mockUserStr = localStorage.getItem('mockUser');
+          if (mockUserStr) {
+            const mockUser = JSON.parse(mockUserStr);
+            mockUser.tokens = tokens + 100000;
+            mockUser.tokens_expiry_date = expiryDate.toISOString();
+            localStorage.setItem('mockUser', JSON.stringify(mockUser));
+          }
+        } catch (e) {
+          console.error('Error updating mock user in localStorage', e);
+        }
+      }
+      
       return { success: true };
     }
     
@@ -286,19 +340,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       // Token package definitions
       const tokenPackages = [
-        { id: 'basic', tokens: 10, tier: 'basic' as const },
-        { id: 'value', tokens: 25, tier: 'basic' as const },
-        { id: 'pro', tokens: 70, tier: 'pro' as const },
-        { id: 'plus', tokens: 150, tier: 'pro' as const },
-        { id: 'elite', tokens: 350, tier: 'enterprise' as const },
-        { id: 'max', tokens: 1000, tier: 'enterprise' as const },
+        { id: 'basic', tokens: 100000, tier: 'basic' as const },
+        { id: 'value', tokens: 250000, tier: 'basic' as const },
+        { id: 'pro', tokens: 600000, tier: 'pro' as const },
+        { id: 'max', tokens: 1000000, tier: 'enterprise' as const },
       ];
+      
+      // Handle token subtraction
+      if (packageId.startsWith('subtract-')) {
+        const amount = parseInt(packageId.replace('subtract-', '')) || 10000;
+        const newTokenCount = Math.max(0, tokens - amount);
+        
+        const { error } = await supabase
+          .from('users')
+          .update({
+            tokens: newTokenCount,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', session.user.id);
+        
+        if (error) throw error;
+        
+        // Update local state
+        setTokens(newTokenCount);
+        
+        return { success: true };
+      }
       
       const selectedPackage = tokenPackages.find(pkg => pkg.id === packageId);
       
       if (!selectedPackage) {
         return { success: false, error: 'Invalid package' };
       }
+      
+      // Create expiry date (28 days from now)
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + 28);
       
       // Here, you would integrate with a payment processor
       // For now, we'll just update the tokens directly
@@ -307,6 +384,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .from('users')
         .update({
           tokens: tokens + selectedPackage.tokens,
+          tokens_expiry_date: expiryDate.toISOString(),
           tier: selectedPackage.tier,
           updated_at: new Date().toISOString(),
         })
@@ -316,6 +394,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Update local state
       setTokens(tokens + selectedPackage.tokens);
+      setTokensExpiryDate(expiryDate.toISOString());
       setTier(selectedPackage.tier);
       
       return { success: true };
@@ -329,6 +408,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated,
     user,
     tokens,
+    tokensExpiryDate,
     tier,
     isLoading,
     signInWithGoogle,
@@ -337,6 +417,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout,
     refreshTokenCount,
     buyTokens,
+    tokensExpired: () => {
+      if (!tokensExpiryDate) return false;
+      const expiryDate = new Date(tokensExpiryDate);
+      const now = new Date();
+      return expiryDate < now;
+    },
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

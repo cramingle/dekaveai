@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { updateUserTokens, getUserData } from '@/lib/supabase';
+import { updateUserTokensWithExpiry, getUserData } from '@/lib/supabase';
 import logger from '@/lib/logger';
 
 // Initialize Stripe with the webhook secret
@@ -13,6 +13,14 @@ const MAX_REQUESTS_PER_WINDOW = 30; // Higher limit for Stripe webhooks
 
 // Store rate limiting data
 const rateLimitTracker: Record<string, { count: number, resetTime: number }> = {};
+
+// Token packages mapping from price IDs to token amounts
+const TOKEN_PACKAGES: Record<string, number> = {
+  'price_basic': 100000,    // $5.00
+  'price_value': 250000,    // $10.00
+  'price_pro': 600000,      // $20.00
+  'price_max': 1000000,     // $25.00
+};
 
 export async function POST(request: NextRequest) {
   try {
@@ -114,23 +122,46 @@ export async function POST(request: NextRequest) {
           );
         }
         
-        // Add 10 tokens to the user's account
-        const newTokenCount = userData.tokens + 10;
-        const updated = await updateUserTokens(userId, newTokenCount);
+        // Get the line items to determine which package was purchased
+        const lineItems = await stripe.checkout.sessions.listLineItems(session.id);
+        const priceId = lineItems.data[0]?.price?.id;
+        
+        if (!priceId) {
+          logger.error('No price ID found in checkout session');
+          return NextResponse.json(
+            { error: 'Missing price ID in session' },
+            { status: 400 }
+          );
+        }
+        
+        // Map the price ID to token quantity or use default (100k) if not found
+        const tokenQuantity = TOKEN_PACKAGES[priceId] || 100000;
+        
+        // Calculate expiration date (28 days from now)
+        const expirationDate = new Date();
+        expirationDate.setDate(expirationDate.getDate() + 28);
+        
+        // Update user's tokens with expiration date
+        const updated = await updateUserTokensWithExpiry(
+          userId,
+          userData.tokens + tokenQuantity,
+          expirationDate.toISOString()
+        );
         
         if (!updated) {
           throw new Error(`Failed to update tokens for user ${userId}`);
         }
         
-        logger.info(`Added 10 tokens to user ${userId}, new count: ${newTokenCount}`);
+        logger.info(`Added ${tokenQuantity.toLocaleString()} tokens to user ${userId}, expires on ${expirationDate.toISOString()}`);
         
         // Return success response
         return NextResponse.json({ 
           success: true,
           message: 'Payment processed successfully',
           userId: userId,
-          tokensAdded: 10,
-          newTokenCount: newTokenCount
+          tokensAdded: tokenQuantity,
+          expirationDate: expirationDate.toISOString(),
+          newTokenCount: userData.tokens + tokenQuantity
         });
       } catch (error) {
         logger.error('Error processing webhook payment:', error);

@@ -11,9 +11,8 @@ type PaywallProps = {
 };
 
 // Cost calculation based on API usage
-// Average cost per token: ~$0.07 USD
-// Pricing: Rp 20,000 for 10 tokens (approx $1.28 USD revenue for ~$0.70 USD cost)
-// This ensures >80% profit margin while keeping price simple and attractive
+// Pricing: $5.00 for 100k tokens, $10.00 for 250k tokens, etc.
+// All tokens expire 28 days after purchase
 
 export function Paywall({ onClose, isLoading: externalLoading = false }: PaywallProps) {
   const [error, setError] = useState('');
@@ -105,8 +104,8 @@ export function Paywall({ onClose, isLoading: externalLoading = false }: Paywall
               transition={{ delay: 0.2 }}
             >
               <div className="flex justify-between items-center mb-2">
-                <h3 className="text-white font-medium">10 Tokens</h3>
-                <span className="text-sm bg-white/10 rounded-full px-2 py-0.5 text-white">Rp 20,000</span>
+                <h3 className="text-white font-medium">100,000 Tokens</h3>
+                <span className="text-sm bg-white/10 rounded-full px-2 py-0.5 text-white">$5.00</span>
               </div>
               <ul className="space-y-2 mb-3">
                 <li className="flex items-center text-sm text-zinc-300">
@@ -132,9 +131,10 @@ export function Paywall({ onClose, isLoading: externalLoading = false }: Paywall
               <div className="text-xs text-zinc-500 mt-2 p-2 bg-zinc-800/50 rounded-lg">
                 <p>Each generation typically costs:</p>
                 <ul className="mt-1 pl-4 list-disc">
-                  <li>Standard quality: 1 token</li>
-                  <li>HD quality: 2 tokens</li>
+                  <li>Standard quality: ~2,000-3,000 tokens</li>
+                  <li>HD quality: ~5,000-6,000 tokens</li>
                 </ul>
+                <p className="mt-1 text-zinc-400">Tokens expire 28 days after purchase</p>
               </div>
             </motion.div>
           </div>
@@ -159,7 +159,7 @@ export function Paywall({ onClose, isLoading: externalLoading = false }: Paywall
                   Processing...
                 </span>
               ) : (
-                'Pay Rp 20,000'
+                'Pay $5.00'
               )}
             </motion.button>
           </div>

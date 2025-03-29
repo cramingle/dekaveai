@@ -83,30 +83,19 @@ export default function Home() {
   
   // Token utility functions
   const getMaxTokens = () => {
-    return tier === 'free' ? 3 : tier === 'basic' ? 10 : tier === 'pro' ? 100 : 500;
+    return tier === 'free' ? 300000 : tier === 'basic' ? 1000000 : tier === 'pro' ? 6000000 : 10000000;
   };
   
   const calculateTokenUsage = (prompt: string, images: UploadedImage[]): number => {
-    // Base token cost
-    let tokenCost = tokenInfo.tokenRatio;
+    // Base token cost for standard quality
+    let tokenCost = 10000;
     
-    // Add cost based on prompt complexity
-    // More complex prompts (longer, with special formatting) cost more
-    const promptLength = prompt.length;
-    const promptComplexity = Math.min(2, (promptLength / 50) * tokenInfo.promptMultiplier);
-    tokenCost += promptComplexity;
-    
-    // Add cost based on number of images and their combined size
-    const imageCount = images.length;
-    tokenCost += (imageCount - 1) * 0.5; // Each additional image adds 0.5 tokens
-    
-    // Add cost for HD quality if selected (doubles the token cost)
+    // Double the cost for HD quality
     if (isHDQuality) {
-      tokenCost *= 2;
+      tokenCost = 20000;
     }
     
-    // Round up to nearest integer
-    return Math.ceil(tokenCost);
+    return tokenCost;
   };
   
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

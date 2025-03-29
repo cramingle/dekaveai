@@ -9,6 +9,7 @@ export type UserData = {
   ipAddress?: string;
   createdAt: string;
   lastLogin: string;
+  tokens_expiry_date?: string; // Optional for backward compatibility
 };
 
 // Check if we have Supabase environment variables
@@ -247,4 +248,27 @@ export function getIPAddress(req: Request): string {
 
   // Fallback to a placeholder if we can't determine the IP
   return '0.0.0.0';
+}
+
+// Helper function to update user tokens with expiration date
+export async function updateUserTokensWithExpiry(
+  userId: string, 
+  tokens: number, 
+  expirationDate: string
+): Promise<boolean> {
+  const { error } = await supabase
+    .from('users')
+    .update({ 
+      tokens,
+      tokens_expiry_date: expirationDate,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', userId);
+
+  if (error) {
+    console.error('Error updating user tokens:', error);
+    return false;
+  }
+
+  return true;
 } 

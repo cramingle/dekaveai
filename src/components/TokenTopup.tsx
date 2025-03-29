@@ -18,12 +18,10 @@ export function TokenTopup({ onPurchase, isLoading = false, onClose }: TokenTopu
   const [selectedPackage, setSelectedPackage] = useState<string>('');
   
   const tokenPackages: TokenPackage[] = [
-    { id: 'basic', tokens: 10, price: 10000, discount: 0 },
-    { id: 'value', tokens: 25, price: 20000, discount: 20 },
-    { id: 'pro', tokens: 70, price: 50000, discount: 30 },
-    { id: 'plus', tokens: 150, price: 100000, discount: 35 },
-    { id: 'elite', tokens: 350, price: 200000, discount: 40 },
-    { id: 'max', tokens: 1000, price: 500000, discount: 50 },
+    { id: 'basic', tokens: 100000, price: 5, discount: 0 },
+    { id: 'value', tokens: 250000, price: 10, discount: 20 },
+    { id: 'pro', tokens: 600000, price: 20, discount: 33 },
+    { id: 'max', tokens: 1000000, price: 25, discount: 50 },
   ];
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -34,7 +32,20 @@ export function TokenTopup({ onPurchase, isLoading = false, onClose }: TokenTopu
   };
   
   const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('id-ID').format(price);
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2
+    }).format(price);
+  };
+  
+  const formatTokens = (tokens: number) => {
+    if (tokens >= 1000000) {
+      return `${(tokens / 1000000).toFixed(1)}M`;
+    } else if (tokens >= 1000) {
+      return `${(tokens / 1000).toFixed(0)}k`;
+    }
+    return tokens.toString();
   };
   
   return (
@@ -113,16 +124,16 @@ export function TokenTopup({ onPurchase, isLoading = false, onClose }: TokenTopu
                     </div>
                     <div className="flex-1 flex flex-wrap justify-between items-center">
                       <div>
-                        <p className="text-white font-medium text-sm sm:text-base">{pkg.tokens} Tokens</p>
+                        <p className="text-white font-medium text-sm sm:text-base">{formatTokens(pkg.tokens)} Tokens</p>
                         <p className="text-zinc-400 text-xs mt-0.5">
-                          {(pkg.price / pkg.tokens).toLocaleString('id-ID')} / token
+                          ${(pkg.price * 100 / pkg.tokens).toFixed(6)} per 1k tokens
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="text-white text-base sm:text-lg font-bold">Rp {formatPrice(pkg.price)}</p>
+                        <p className="text-white text-base sm:text-lg font-bold">{formatPrice(pkg.price)}</p>
                         {pkg.discount > 0 && (
                           <p className="text-zinc-500 text-xs line-through">
-                            Rp {formatPrice(Math.round(pkg.price / (1 - pkg.discount / 100)))}
+                            {formatPrice(Math.round(pkg.price / (1 - pkg.discount / 100)))}
                           </p>
                         )}
                       </div>
@@ -154,14 +165,14 @@ export function TokenTopup({ onPurchase, isLoading = false, onClose }: TokenTopu
                   Processing...
                 </span>
               ) : (
-                'Purchase Tokens'
+                `Purchase ${selectedPackage ? formatPrice(tokenPackages.find(p => p.id === selectedPackage)?.price || 0) : 'Tokens'}`
               )}
             </motion.button>
           </motion.form>
           
           <div className="mt-4 sm:mt-6 pt-3 sm:pt-4 border-t border-zinc-800/50">
             <p className="text-xs text-center text-zinc-500">
-              Secure payment processing. Tokens will be added immediately.
+              Secure payment processing. Tokens expire 28 days after purchase.
             </p>
           </div>
         </div>

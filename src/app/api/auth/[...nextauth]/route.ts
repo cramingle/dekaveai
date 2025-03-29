@@ -12,6 +12,7 @@ declare module 'next-auth' {
       image?: string | null;
       id?: string;
       tokens?: number;
+      tokens_expiry_date?: string;
       tier?: 'free' | 'basic' | 'pro' | 'enterprise';
     }
   }
@@ -46,25 +47,31 @@ const handler = NextAuth({
       // Get token count from Supabase
       const { data: userData, error } = await supabase
         .from('users')
-        .select('tokens, tier')
+        .select('tokens, tokens_expiry_date, tier')
         .eq('id', user.id)
         .single();
       
       if (!error && userData) {
         // Add token info to session
         session.user.tokens = userData.tokens || 0;
+        session.user.tokens_expiry_date = userData.tokens_expiry_date;
         session.user.tier = userData.tier || 'free';
         session.user.id = user.id;
       } else {
         // If first login, or token info not found, create default token info
         const tier = 'free';
-        const tokens = 3; // Default token count for free tier
+        const tokens = 100000; // Default token count for free tier
+        
+        // Calculate expiration date (28 days from now)
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() + 28);
         
         // Update user with default token info
         await supabase
           .from('users')
           .update({
             tokens,
+            tokens_expiry_date: expiryDate.toISOString(),
             tier,
             updated_at: new Date().toISOString(),
           })
@@ -72,6 +79,7 @@ const handler = NextAuth({
           
         // Add to session
         session.user.tokens = tokens;
+        session.user.tokens_expiry_date = expiryDate.toISOString();
         session.user.tier = tier;
         session.user.id = user.id;
         

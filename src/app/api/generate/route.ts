@@ -82,8 +82,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check if tokens are expired
+    if (userData.tokens_expiry_date) {
+      const expiryDate = new Date(userData.tokens_expiry_date);
+      if (expiryDate < new Date()) {
+        return NextResponse.json(
+          { error: 'Tokens have expired', tokensExpired: true, expiryDate: userData.tokens_expiry_date },
+          { status: 403 }
+        );
+      }
+    }
+
     // Calculate token cost based on quality
-    const tokenCost = isHDQuality ? 2 : 1;
+    const tokenCost = isHDQuality ? 20000 : 10000;
 
     // Check if user has enough tokens
     if (userData.tokens < tokenCost) {
