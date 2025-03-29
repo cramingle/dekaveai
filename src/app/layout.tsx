@@ -18,7 +18,7 @@ const metadataValues = {
   description: 'Transform product photos into stunning professional ads and marketing materials with AI.',
   keywords: 'AI, ad generator, marketing materials, product photos, advertising',
   siteUrl: 'https://dekaveai.vercel.app',
-  ogImage: 'https://dekaveai.vercel.app/og-image.jpg',
+  ogImage: 'https://dekaveai.vercel.app/og-image.png',
   twitterHandle: '@dekaveAI',
 };
 
@@ -60,6 +60,7 @@ export default function RootLayout({
         <meta property="og:title" content={metadataValues.title} />
         <meta property="og:description" content={metadataValues.description} />
         <meta property="og:image" content={metadataValues.ogImage} />
+        <meta property="og:site_name" content="dekaveAI" />
         
         {/* Twitter */}
         <meta name="twitter:card" content="summary_large_image" />
