@@ -43,7 +43,8 @@ export const PRICE_ID = stripePriceId || 'mock_price_123';
 export async function createCheckoutSession(
   customerEmail: string,
   successUrl: string,
-  cancelUrl: string
+  cancelUrl: string,
+  userId: string
 ): Promise<string | null> {
   try {
     const session = await stripe.checkout.sessions.create({
@@ -58,6 +59,7 @@ export async function createCheckoutSession(
       success_url: successUrl,
       cancel_url: cancelUrl,
       customer_email: customerEmail,
+      client_reference_id: userId,
     });
 
     return session.url;
