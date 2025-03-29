@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { headers } from 'next/headers';
 import Stripe from 'stripe';
 import { updateUserTokens, getUserData } from '@/lib/supabase';
 import logger from '@/lib/logger';
@@ -51,9 +50,8 @@ export async function POST(request: NextRequest) {
     // Get the raw request body for signature verification
     const rawBody = await request.text();
     
-    // Get the Stripe signature header
-    const headersList = headers();
-    const signature = headersList.get('stripe-signature');
+    // Get the Stripe signature directly from request headers
+    const signature = request.headers.get('stripe-signature');
     
     if (!signature || !endpointSecret) {
       logger.error('Missing Stripe signature or webhook secret');
@@ -94,27 +92,20 @@ export async function POST(request: NextRequest) {
         );
       }
       
-      // Find the user by email in your database
-      // For simplicity, we'll assume users are stored with their email in Supabase
-      // In a real app, you'd have a more robust way to link Stripe customers to your users
+      // Get the user ID from client_reference_id
+      const userId = session.client_reference_id;
+      
+      if (!userId) {
+        logger.error('No userId found in session client_reference_id');
+        return NextResponse.json(
+          { error: 'User not found' },
+          { status: 404 }
+        );
+      }
       
       try {
-        // This is a placeholder - you'd need to implement a function to get user by email
-        // For example: const userData = await getUserByEmail(customerEmail);
-        
-        // Instead, for demo, assuming userId is stored in the client_reference_id
-        const userId = session.client_reference_id;
-        
-        if (!userId) {
-          logger.error('No userId found in session client_reference_id');
-          return NextResponse.json(
-            { error: 'User not found' },
-            { status: 404 }
-          );
-        }
-        
         // Get current user data
-        const userData = await getUserData(userId as string);
+        const userData = await getUserData(userId);
         if (!userData) {
           logger.error(`User not found with id ${userId}`);
           return NextResponse.json(
@@ -125,9 +116,22 @@ export async function POST(request: NextRequest) {
         
         // Add 10 tokens to the user's account
         const newTokenCount = userData.tokens + 10;
-        await updateUserTokens(userId as string, newTokenCount);
+        const updated = await updateUserTokens(userId, newTokenCount);
+        
+        if (!updated) {
+          throw new Error(`Failed to update tokens for user ${userId}`);
+        }
         
         logger.info(`Added 10 tokens to user ${userId}, new count: ${newTokenCount}`);
+        
+        // Return success response
+        return NextResponse.json({ 
+          success: true,
+          message: 'Payment processed successfully',
+          userId: userId,
+          tokensAdded: 10,
+          newTokenCount: newTokenCount
+        });
       } catch (error) {
         logger.error('Error processing webhook payment:', error);
         return NextResponse.json(
@@ -137,7 +141,7 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Return a success response to Stripe
+    // Return a success response to Stripe for other event types
     return NextResponse.json({ received: true });
   } catch (error) {
     logger.error('Error processing webhook:', error);
