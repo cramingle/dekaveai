@@ -1,10 +1,11 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 
-export default function SuccessPage() {
+// Create a client component that uses the search params
+function SuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get('session_id');
@@ -54,5 +55,14 @@ export default function SuccessPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// Wrap the client component with Suspense
+export default function SuccessPage() {
+  return (
+    <Suspense fallback={<LoadingSpinner message="Loading payment details..." />}>
+      <SuccessContent />
+    </Suspense>
   );
 } 
