@@ -32,7 +32,7 @@ interface TokenUsageInfo {
 
 export default function Home() {
   // Use auth context
-  const { isAuthenticated, tokens, tier, buyTokens, refreshTokenCount } = useAuth();
+  const { isAuthenticated, tokens, tier, buyTokens, refreshTokenCount, user } = useAuth();
   
   // Other state variables
   const [userPrompt, setUserPrompt] = useState<string>('');
@@ -83,7 +83,8 @@ export default function Home() {
   
   // Token utility functions
   const getMaxTokens = () => {
-    return tier === 'free' ? 300000 : tier === 'basic' ? 1000000 : tier === 'pro' ? 6000000 : 10000000;
+    // Use a consistent upper limit for all users, not based on tier
+    return 1000000; // 1M tokens as reasonable default
   };
   
   const calculateTokenUsage = (prompt: string, images: UploadedImage[]): number => {
@@ -193,7 +194,7 @@ export default function Home() {
               body: JSON.stringify({
                 imageUrl,
                 prompt,
-                userId: tier === 'free' ? 'demo-user' : 'premium-user', // In production, use real user ID
+                userId: user?.id, // Use actual user ID from authenticated session
                 templateName: 'sportsDrink', // Or dynamically choose based on user input
                 isHDQuality
               }),

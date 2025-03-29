@@ -16,11 +16,9 @@ type UserAuth = {
   user: any | null;
   tokens: number;
   tokensExpiryDate?: string;
-  tier: 'free' | 'basic' | 'pro' | 'enterprise';
+  tier: string; // Simplified - tier is just a descriptive string, not functional
   isLoading: boolean;
   signInWithGoogle: () => Promise<void>;
-  loginAsFreeTier: (email: string) => Promise<{ success: boolean; error?: string }>;
-  loginAsPaidTier: (email: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshTokenCount: () => Promise<void>;
   buyTokens: (packageId: string) => Promise<{ success: boolean; error?: string }>;
@@ -37,7 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<any | null>(null);
   const [tokens, setTokens] = useState<number>(0);
   const [tokensExpiryDate, setTokensExpiryDate] = useState<string | undefined>(undefined);
-  const [tier, setTier] = useState<'free' | 'basic' | 'pro' | 'enterprise'>('free');
+  const [tier, setTier] = useState<string>('Pioneer');
   const isLoading = status === 'loading';
 
   // Update state when session changes
@@ -47,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(session.user);
       setTokens(session.user.tokens || 0);
       setTokensExpiryDate(session.user.tokens_expiry_date);
-      setTier(session.user.tier || 'free');
+      setTier(session.user.tier || 'Pioneer');
     } else {
       // Check for mock auth in development mode
       if (process.env.NODE_ENV === 'development') {
@@ -61,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(mockUser);
             setTokens(mockUser.tokens || 100000);
             setTokensExpiryDate(mockUser.tokens_expiry_date);
-            setTier(mockUser.tier || 'free');
+            setTier(mockUser.tier || 'Pioneer');
             return; // Skip the reset below
           } catch (e) {
             console.error('Error parsing mock user from localStorage', e);
@@ -74,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       setTokens(0);
       setTokensExpiryDate(undefined);
-      setTier('free');
+      setTier('Pioneer');
     }
   }, [session]);
 
@@ -94,9 +92,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         name: 'Dev User',
         email: 'dev@example.com',
         image: null,
-        tokens: 100000, // Free tier default (100k tokens)
+        tokens: 100000, // Default 100k tokens
         tokens_expiry_date: expiryDate.toISOString(),
-        tier: 'free' as 'free' | 'basic' | 'pro' | 'enterprise'
+        tier: 'Pioneer'
       };
       
       // Update state
@@ -116,58 +114,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signIn('google', { callbackUrl: '/' });
   };
 
-  // Function to login as free tier
-  const loginAsFreeTier = async (email: string) => {
-    try {
-      // Get client IP address for tracking
-      const ip = await fetch('https://api.ipify.org?format=json')
-        .then(res => res.json())
-        .then(data => data.ip)
-        .catch(() => 'unknown');
-      
-      // Check if IP already has a free account
-      const { data: existingIP } = await supabase
-        .from('ip_tracking')
-        .select('user_id')
-        .eq('ip', ip)
-        .single();
-      
-      if (existingIP) {
-        return { 
-          success: false, 
-          error: 'This IP already has a free account. Please sign in with Google instead.'
-        };
-      }
-      
-      // For now, sign in with email (we'll need to verify email flow later)
-      // In production, use a secure email verification flow or OAuth
-      await signIn('email', { email, callbackUrl: '/' });
-      
-      return { success: true };
-    } catch (error) {
-      console.error('Free tier login error:', error);
-      return { success: false, error: 'Failed to create free account. Please try again.' };
-    }
-  };
-
-  // Function to login as paid tier
-  const loginAsPaidTier = async (email: string) => {
-    try {
-      // For now, this is a placeholder for payment flow
-      // In production, redirect to a payment processor
-      await signIn('email', { email, callbackUrl: '/' });
-      
-      // In a real implementation, after payment confirmation:
-      // 1. Update the user's tier to 'basic'
-      // 2. Add 10 tokens to their account
-      
-      return { success: true };
-    } catch (error) {
-      console.error('Paid tier login error:', error);
-      return { success: false, error: 'Payment failed. Please try again.' };
-    }
-  };
-
   // Function to log out
   const logout = async () => {
     // Handle mock logout in development
@@ -180,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       setTokens(0);
       setTokensExpiryDate(undefined);
-      setTier('free');
+      setTier('Pioneer');
       
       // Reload page to refresh UI
       window.location.href = '/';
@@ -204,7 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.log('Retrieved tokens from localStorage:', mockUser.tokens);
           setTokens(mockUser.tokens || 0);
           setTokensExpiryDate(mockUser.tokens_expiry_date);
-          setTier(mockUser.tier || 'free');
+          setTier(mockUser.tier || 'Pioneer');
           return;
         }
       } catch (e) {
@@ -212,8 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       
       // Fallback - set default values
-      const isFreeTier = user?.email?.includes('free') || tier === 'free';
-      const newTokens = isFreeTier ? 3 : 10;
+      const newTokens = 0; // Default no tokens
       setTokens(newTokens);
       
       return;
@@ -273,10 +218,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Token package definitions
       const tokenPackages = [
-        { id: 'basic', tokens: 100000, tier: 'basic' as const },
-        { id: 'value', tokens: 250000, tier: 'basic' as const },
-        { id: 'pro', tokens: 600000, tier: 'pro' as const },
-        { id: 'max', tokens: 1000000, tier: 'enterprise' as const },
+        { id: 'basic', tokens: 100000, tier: 'Pioneer' },
+        { id: 'value', tokens: 250000, tier: 'Voyager' },
+        { id: 'pro', tokens: 600000, tier: 'Dominator' },
+        { id: 'max', tokens: 1000000, tier: 'Overlord' },
       ];
       
       const selectedPackage = tokenPackages.find(pkg => pkg.id === packageId);
@@ -340,10 +285,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       // Token package definitions
       const tokenPackages = [
-        { id: 'basic', tokens: 100000, tier: 'basic' as const },
-        { id: 'value', tokens: 250000, tier: 'basic' as const },
-        { id: 'pro', tokens: 600000, tier: 'pro' as const },
-        { id: 'max', tokens: 1000000, tier: 'enterprise' as const },
+        { id: 'basic', tokens: 100000, tier: 'Pioneer' },
+        { id: 'value', tokens: 250000, tier: 'Voyager' },
+        { id: 'pro', tokens: 600000, tier: 'Dominator' },
+        { id: 'max', tokens: 1000000, tier: 'Overlord' },
       ];
       
       // Handle token subtraction
@@ -412,8 +357,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     tier,
     isLoading,
     signInWithGoogle,
-    loginAsFreeTier,
-    loginAsPaidTier,
     logout,
     refreshTokenCount,
     buyTokens,

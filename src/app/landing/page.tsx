@@ -70,42 +70,22 @@ export default function LandingPage() {
           {/* Search-like input */}
           <div className="w-full max-w-xl mx-auto mb-10 md:mb-16 relative">
             <div className="flex items-center w-full overflow-hidden rounded-2xl bg-zinc-900/70 border border-zinc-800 backdrop-blur-sm">
-              <textarea 
-                placeholder="Ask anything..."
-                className="w-full bg-transparent py-3 md:py-4 px-4 md:px-6 text-white placeholder-zinc-500 focus:outline-none text-sm md:text-base resize-none min-h-[56px]"
+              <input 
+                type="email" 
+                placeholder="Enter your email address..."
+                className="w-full bg-transparent py-3 md:py-4 px-4 md:px-6 text-white placeholder-zinc-500 focus:outline-none text-sm md:text-base"
               />
               <button className="bg-white text-black font-medium rounded-full py-2 md:py-3 px-4 md:px-6 mx-2 hover:bg-gray-200 transition-all text-sm md:text-base whitespace-nowrap">
-                Create Now
+                Get Free Credits
               </button>
             </div>
+            <p className="text-xs text-zinc-500 mt-2 text-center">Join our newsletter for tips & tricks and get free generation credits</p>
           </div>
           
           {/* Description */}
           <p className="text-zinc-400 text-base md:text-xl mb-8 md:mb-12 max-w-3xl mx-auto text-center">
             Transform product photos into stunning professional advertisements with AI
           </p>
-          
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 sm:gap-6 justify-center mt-2 w-full max-w-md mx-auto">
-            <Link 
-              href="#showcase" 
-              className="flex items-center justify-center px-6 md:px-8 py-2.5 md:py-3 rounded-lg border border-white/10 hover:bg-white/5 transition-all text-sm md:text-base w-full"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 md:h-5 md:w-5 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
-              </svg>
-              View Examples
-            </Link>
-            <Link 
-              href="/" 
-              className="flex items-center justify-center px-6 md:px-8 py-2.5 md:py-3 rounded-lg bg-white text-black hover:bg-gray-200 transition-all text-sm md:text-base w-full"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 md:h-5 md:w-5 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-              </svg>
-              Start Creating
-            </Link>
-          </div>
         </motion.div>
 
         {/* Image Showcase Section */}
@@ -117,7 +97,7 @@ export default function LandingPage() {
           transition={{ duration: 1 }}
         >
           <h2 className="text-2xl md:text-3xl font-bold text-center mb-8">
-            AI-Generated Marketing Results
+            The Result
           </h2>
           
           <div className="relative w-full overflow-hidden" style={{ height: '650px' }}>
@@ -267,9 +247,8 @@ export default function LandingPage() {
               href="/" 
               className="px-6 md:px-8 py-2.5 md:py-4 rounded-full bg-white text-black font-semibold hover:bg-gray-200 transition-all hover:scale-105 transform inline-block text-sm md:text-lg"
             >
-              Start Creating Now
+              Let's Do This!
             </Link>
-            <p className="mt-4 text-zinc-500 text-xs md:text-sm">No credit card required for trial</p>
           </div>
         </motion.div>
       </main>

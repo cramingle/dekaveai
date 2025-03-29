@@ -6,6 +6,7 @@ type TokenPackage = {
   tokens: number;
   price: number;
   discount: number;
+  tier: string;
 };
 
 type TokenTopupProps = {
@@ -18,10 +19,10 @@ export function TokenTopup({ onPurchase, isLoading = false, onClose }: TokenTopu
   const [selectedPackage, setSelectedPackage] = useState<string>('');
   
   const tokenPackages: TokenPackage[] = [
-    { id: 'basic', tokens: 100000, price: 5, discount: 0 },
-    { id: 'value', tokens: 250000, price: 10, discount: 20 },
-    { id: 'pro', tokens: 600000, price: 20, discount: 33 },
-    { id: 'max', tokens: 1000000, price: 25, discount: 50 },
+    { id: 'basic', tokens: 100000, price: 5, discount: 0, tier: 'Pioneer' },
+    { id: 'value', tokens: 250000, price: 10, discount: 20, tier: 'Voyager' },
+    { id: 'pro', tokens: 600000, price: 20, discount: 33, tier: 'Dominator' },
+    { id: 'max', tokens: 1000000, price: 25, discount: 50, tier: 'Overlord' },
   ];
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -128,6 +129,7 @@ export function TokenTopup({ onPurchase, isLoading = false, onClose }: TokenTopu
                         <p className="text-zinc-400 text-xs mt-0.5">
                           ${(pkg.price * 100 / pkg.tokens).toFixed(6)} per 1k tokens
                         </p>
+                        <p className="text-xs mt-1 text-zinc-300">Tier: <span className="font-medium">{pkg.tier}</span></p>
                       </div>
                       <div className="text-right">
                         <p className="text-white text-base sm:text-lg font-bold">{formatPrice(pkg.price)}</p>
