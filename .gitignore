@@ -41,3 +41,7 @@ next-env.d.ts
 # Logs
 logs
 *.log
+
+# Database files with sensitive information
+/sql/schema_update.sql
+/sql/supabase_rls_policies.sql
