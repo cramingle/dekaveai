@@ -10,6 +10,9 @@ const DANA_API_BASE_URL = DANA_ENVIRONMENT === 'production'
   ? 'https://api.dana.id' // Production URL
   : 'https://api.sandbox.dana.id'; // Sandbox URL
 
+// DANA API endpoint for payment creation
+const DANA_PAYMENT_ENDPOINT = '/payments/create'; // Use the API path without version prefix
+
 // Simple in-memory rate limiting for payment endpoint
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
 const MAX_REQUESTS_PER_WINDOW = 5; // 5 requests per minute per IP
@@ -149,6 +152,7 @@ export async function POST(request: NextRequest) {
         item_description: description,
         customer_email: email,
         timestamp: timestamp,
+        sandbox_mode: DANA_ENVIRONMENT === 'sandbox', // Add explicit sandbox mode flag
         notification_urls: {
           payment: getUrl('/api/webhooks/dana/payment'),
           refund: getUrl('/api/webhooks/dana/refund'),
@@ -170,7 +174,7 @@ export async function POST(request: NextRequest) {
         
       // Log the API request for debugging
       logger.info('Making Dana payment request', {
-        url: `${DANA_API_BASE_URL}/v2/payments/create`,
+        url: `${DANA_API_BASE_URL}${DANA_PAYMENT_ENDPOINT}`,
         orderId,
         merchantId: DANA_MERCHANT_ID,
         amount: amount.toFixed(2),
@@ -179,14 +183,17 @@ export async function POST(request: NextRequest) {
       });
       
       // Make the API request to Dana
-      const response = await fetch(`${DANA_API_BASE_URL}/v2/payments/create`, {
+      const response = await fetch(`${DANA_API_BASE_URL}${DANA_PAYMENT_ENDPOINT}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
           'X-Dana-Merchant-ID': DANA_MERCHANT_ID,
           'X-Dana-Signature': signature,
           'X-Dana-Timestamp': timestamp,
-          'X-Dana-API-Key': DANA_API_KEY
+          'X-Dana-API-Key': DANA_API_KEY,
+          'User-Agent': 'Dekave-AI-App/1.0',
+          'Cache-Control': 'no-cache'
         },
         body: JSON.stringify(payload)
       });
@@ -198,18 +205,34 @@ export async function POST(request: NextRequest) {
         headers: Object.fromEntries(response.headers.entries())
       });
       
+      // Clone the response before reading it, to avoid "body already read" errors
+      const responseClone = response.clone();
+      
+      // Attempt to get the response text first for debugging
+      const responseText = await responseClone.text();
+      logger.info('Dana API raw response', {
+        text: responseText || '(empty response)',
+        contentLength: responseText.length
+      });
+      
       if (!response.ok) {
         // Get the error response
         let errorData;
         try {
-          errorData = await response.json();
-        } catch (e) {
-          errorData = await response.text();
+          // Try to parse as JSON if possible
+          errorData = responseText && responseText.length > 0 ? JSON.parse(responseText) : { error: 'Empty response' };
+        } catch (e: any) {
+          // If JSON parsing fails, use the text
+          errorData = { text: responseText, parseError: e.message };
         }
         
         logger.error('Dana payment creation failed', {
           status: response.status,
-          error: errorData
+          error: errorData,
+          request: {
+            url: `${DANA_API_BASE_URL}${DANA_PAYMENT_ENDPOINT}`,
+            payload: JSON.stringify(payload)
+          }
         });
         
         // Track failure
@@ -229,8 +252,17 @@ export async function POST(request: NextRequest) {
         );
       }
       
-      // Parse the successful response
-      const data = await response.json();
+      // For success response, try to parse the JSON data from the text we already read
+      let data;
+      try {
+        data = responseText && responseText.length > 0 ? JSON.parse(responseText) : {};
+      } catch (e: any) {
+        logger.error('Failed to parse Dana API success response', {
+          error: e.message,
+          text: responseText
+        });
+        data = {}; // Empty object as fallback
+      }
       
       // Log success
       logger.info('Dana payment created successfully', {
@@ -239,6 +271,16 @@ export async function POST(request: NextRequest) {
         userId,
         data
       });
+      
+      // Check if we received a payment URL
+      if (!data.payment_url) {
+        logger.error('Dana API response missing payment_url', { data, responseText });
+        
+        return NextResponse.json(
+          { error: 'Missing payment URL in Dana response' },
+          { status: 500 }
+        );
+      }
       
       // Track successful payment URL creation
       trackEvent(EventType.TOKEN_PURCHASE, { 
