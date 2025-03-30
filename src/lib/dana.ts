@@ -1,5 +1,5 @@
 import logger from './logger';
-import { getUrl, DANA_ENABLED, DANA_ENVIRONMENT } from './env';
+import { getUrl, DANA_ENABLED, DANA_ENVIRONMENT, BASE_URL } from './env';
 
 // Define Dana configuration interface
 interface DanaConfig {
@@ -69,23 +69,25 @@ export async function createDanaPayment(
     const packageDetails = TOKEN_PACKAGES[packageId as keyof typeof TOKEN_PACKAGES] || TOKEN_PACKAGES.basic;
     
     // Now we'll call our API route to create the payment instead of doing it client-side
-    const response = await fetch(
-      typeof window === 'undefined' 
-        ? getUrl('/api/payment')
-        : '/api/payment',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: customerEmail,
-          userId: userId,
-          packageId: packageId,
-          amount: packageDetails.price,
-          description: `${packageDetails.tokens} Token Package - ${packageDetails.tier}`
-        }),
-      });
+    const apiUrl = typeof window === 'undefined' 
+      ? `${BASE_URL}/api/payment`
+      : '/api/payment';
+      
+    logger.info('Making Dana payment request to', { url: apiUrl });
+    
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: customerEmail,
+        userId: userId,
+        packageId: packageId,
+        amount: packageDetails.price,
+        description: `${packageDetails.tokens} Token Package - ${packageDetails.tier}`
+      }),
+    });
     
     // Log detailed response information
     logger.info('Dana API response received', {

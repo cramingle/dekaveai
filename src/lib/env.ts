@@ -2,14 +2,30 @@
 // This file centralizes all environment variable access to ensure consistency
 
 // Base URL for the application
-export const BASE_URL = 
-  process.env.NEXTAUTH_URL || 
-  // Hard-code the production URL as first fallback (most reliable)
-  'https://dekaveai.vercel.app' ||
-  // Use Vercel preview URL if available
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 
-  // Finally fallback to window location if on client
-  (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'));
+export const BASE_URL = (() => {
+  // First, try the explicitly set NEXTAUTH_URL
+  if (process.env.NEXTAUTH_URL) {
+    return process.env.NEXTAUTH_URL;
+  }
+  
+  // For production Vercel environment
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  
+  // For client-side
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+  
+  // Fallback to production URL
+  if (process.env.NODE_ENV === 'production') {
+    return 'https://dekaveai.vercel.app';
+  }
+  
+  // Local development fallback
+  return 'http://localhost:3000';
+})();
 
 // NextAuth
 export const NEXTAUTH_URL = process.env.NEXTAUTH_URL;
@@ -48,8 +64,12 @@ export const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
 export function getUrl(path: string): string {
   // Make sure path starts with a slash
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  // Return full URL
-  return `${BASE_URL}${normalizedPath}`;
+  
+  // Check if BASE_URL ends with slash
+  const baseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
+  
+  // Return full URL, making sure we don't have double slashes
+  return `${baseUrl}${normalizedPath}`;
 }
 
 // Export default object for easier importing

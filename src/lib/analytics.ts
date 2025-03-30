@@ -1,6 +1,6 @@
 // Custom analytics utilities for tracking app usage and key events
 import logger from './logger';
-import { getUrl } from './env';
+import { getUrl, BASE_URL } from './env';
 
 // Track costs for reporting and billing
 export interface CostData {
@@ -45,7 +45,8 @@ export async function trackEvent(eventType: EventType, data: Record<string, any>
     // This could be a custom endpoint that stores events in a database
     if (typeof window === 'undefined' && process.env.NODE_ENV === 'production') {
       try {
-        await fetch(getUrl('/api/track'), {
+        const trackUrl = `${BASE_URL}/api/track`;
+        await fetch(trackUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
