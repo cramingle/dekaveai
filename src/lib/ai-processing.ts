@@ -1,26 +1,63 @@
-// Placeholder for AI processing logic
-// In a real application, we would integrate with Replicate API or other AI providers
+/**
+ * AI Processing Module
+ * 
+ * Handles AI tasks for generating professional marketing content
+ * using OpenAI's models with cost optimization.
+ */
 
-// Mock function to simulate image enhancement
-export async function enhanceImage(imageUrl: string): Promise<string> {
-  // In a real app, this would call an AI service API like VanceAI
-  console.log('Enhancing image:', imageUrl);
-  
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  
-  // Return the same URL for demo purposes
-  // In a real app, this would return a URL to the enhanced image
-  return imageUrl;
-}
-
-// AI processing logic using cost-optimized OpenAI models
 import OpenAI from 'openai';
 import { encode } from 'gpt-tokenizer'; // For token counting
 import logger from './logger'; // Import the structured logger
 import { ConversationManager, createConversationManager } from './conversation-manager';
 
 // Remove fs and path imports since we're no longer using the file system
+// import fs from 'fs';
+// import path from 'path';
+
+/**
+ * Enhances a product image to improve quality and appeal for marketing
+ * 
+ * @param imageUrl - URL of the original product image to enhance
+ * @returns Promise containing URL of the enhanced image
+ */
+export async function enhanceImage(imageUrl: string): Promise<string> {
+  try {
+    logger.info('Enhancing image quality:', { imageUrl });
+    
+    // Fetch the image data to analyze
+    const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to fetch image: ${imageResponse.status}`);
+    }
+    
+    // Convert blob to File object which implements the FileLike interface required by OpenAI
+    const imageBlob = await imageResponse.blob();
+    const imageFile = new File([imageBlob], 'product-image.png', { type: 'image/png' });
+    
+    // Initialize AI with upscaling instructions
+    const response = await openai.images.edit({
+      image: imageFile,
+      prompt: "Enhance this product image. Improve lighting, color balance, and sharpness. Remove any background distractions. Make the product appear more professional and appealing for marketing.",
+      n: 1,
+      size: "1024x1024",
+      response_format: "url"
+    });
+    
+    const enhancedImageUrl = response.data[0]?.url;
+    if (!enhancedImageUrl) {
+      throw new Error("No enhanced image URL returned from API");
+    }
+    
+    // Store the enhanced image permanently (OpenAI URLs expire)
+    return await storeGeneratedImage(enhancedImageUrl);
+  } catch (error) {
+    logger.error('Error enhancing image:', error);
+    // Fall back to original image if enhancement fails
+    return imageUrl;
+  }
+}
+
+// AI processing logic using cost-optimized OpenAI models
 // import fs from 'fs';
 // import path from 'path';
 

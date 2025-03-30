@@ -9,6 +9,7 @@ import { ResultsView } from '@/components/ResultsView';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { Paywall } from '@/components/Paywall';
 import { TokenTopup } from '@/components/TokenTopup';
+import { StripeCheckout } from '@/components/StripeCheckout';
 import { useAuth } from '@/lib/auth';
 import { createUser } from '@/lib/supabase';
 import { trackEvent, EventType } from '@/lib/analytics';
@@ -700,10 +701,9 @@ export default function Home() {
         
         {/* Token Topup overlay - for authenticated users */}
         {showTokenTopup && (
-          <TokenTopup 
-            onPurchase={handleTokenPurchase}
-            isLoading={isProcessingPayment}
+          <StripeCheckout 
             onClose={() => setShowTokenTopup(false)}
+            isNewUser={false}
           />
         )}
       </AnimatePresence>

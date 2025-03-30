@@ -33,7 +33,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    const userId = session.user.id;
+    const userId = session.user.id as string;
+    
+    if (!userId) {
+      return NextResponse.json({ error: 'User ID not found in session' }, { status: 401 });
+    }
     
     // Parse request body
     const { imageUrl, prompt, templateName, isHDQuality, resetConversation } = await req.json();
@@ -149,7 +153,4 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-// Remove the GET endpoint for production as it bypasses authentication
-// If you need a demo endpoint, implement proper rate limiting and safeguards 
+} 

@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { updateUserTokensWithExpiry, getUserData } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
+import { TOKEN_PACKAGES } from '@/lib/stripe';
 import logger from '@/lib/logger';
+import { trackEvent, EventType } from '@/lib/analytics';
 
 // Initialize Stripe with the webhook secret
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
@@ -13,14 +16,6 @@ const MAX_REQUESTS_PER_WINDOW = 30; // Higher limit for Stripe webhooks
 
 // Store rate limiting data
 const rateLimitTracker: Record<string, { count: number, resetTime: number }> = {};
-
-// Token packages mapping from price IDs to token amounts
-const TOKEN_PACKAGES: Record<string, number> = {
-  'price_basic': 100000,    // $5.00
-  'price_value': 250000,    // $10.00
-  'price_pro': 600000,      // $20.00
-  'price_max': 1000000,     // $25.00
-};
 
 export async function POST(request: NextRequest) {
   try {
@@ -122,37 +117,85 @@ export async function POST(request: NextRequest) {
           );
         }
         
+        // Get the package ID from session metadata
+        const packageId = session.metadata?.packageId || 'basic';
+        
         // Get the line items to determine which package was purchased
         const lineItems = await stripe.checkout.sessions.listLineItems(session.id);
-        const priceId = lineItems.data[0]?.price?.id;
+        const priceId = lineItems.data[0]?.price?.id || '';
         
-        if (!priceId) {
-          logger.error('No price ID found in checkout session');
-          return NextResponse.json(
-            { error: 'Missing price ID in session' },
-            { status: 400 }
-          );
+        // Determine tokens and tier from price ID and packageId
+        let tokenQuantity = 100000; // Default to 100k tokens
+        let tier = 'Pioneer';  // Default tier
+        
+        // Check if we have pricing info for this price ID
+        if (priceId && 
+            (priceId === 'price_basic' || 
+             priceId === 'price_value' || 
+             priceId === 'price_pro' || 
+             priceId === 'price_max')) {
+          // If we have a direct mapping for this price ID
+          tokenQuantity = TOKEN_PACKAGES[priceId].tokens;
+          tier = TOKEN_PACKAGES[priceId].tier;
+        } else {
+          // Use packageId as fallback
+          switch (packageId) {
+            case 'value':
+              tokenQuantity = 250000;
+              tier = 'Voyager';
+              break;
+            case 'pro':
+              tokenQuantity = 600000;
+              tier = 'Dominator';
+              break;
+            case 'max':
+              tokenQuantity = 1000000;
+              tier = 'Overlord';
+              break;
+            default:
+              // Keep defaults for 'basic'
+              break;
+          }
         }
-        
-        // Map the price ID to token quantity or use default (100k) if not found
-        const tokenQuantity = TOKEN_PACKAGES[priceId] || 100000;
         
         // Calculate expiration date (28 days from now)
         const expirationDate = new Date();
         expirationDate.setDate(expirationDate.getDate() + 28);
         
         // Update user's tokens with expiration date
+        // Note: Update the supabase.ts file to accept the tier parameter if needed
         const updated = await updateUserTokensWithExpiry(
           userId,
           userData.tokens + tokenQuantity,
           expirationDate.toISOString()
         );
         
+        // Update the user's tier separately if needed
+        if (updated) {
+          const { error } = await supabase
+            .from('users')
+            .update({ tier })
+            .eq('id', userId);
+            
+          if (error) {
+            logger.warn(`Failed to update tier for user ${userId}: ${error.message}`);
+          }
+        }
+        
         if (!updated) {
           throw new Error(`Failed to update tokens for user ${userId}`);
         }
         
-        logger.info(`Added ${tokenQuantity.toLocaleString()} tokens to user ${userId}, expires on ${expirationDate.toISOString()}`);
+        logger.info(`Added ${tokenQuantity.toLocaleString()} tokens to user ${userId}, tier ${tier}, expires on ${expirationDate.toISOString()}`);
+        
+        // Track event
+        await trackEvent(EventType.TOKEN_PURCHASE, {
+          userId,
+          amount: tokenQuantity,
+          tier,
+          status: 'completed',
+          expirationDate: expirationDate.toISOString()
+        });
         
         // Return success response
         return NextResponse.json({ 
@@ -160,10 +203,11 @@ export async function POST(request: NextRequest) {
           message: 'Payment processed successfully',
           userId: userId,
           tokensAdded: tokenQuantity,
+          tier: tier,
           expirationDate: expirationDate.toISOString(),
           newTokenCount: userData.tokens + tokenQuantity
         });
-      } catch (error) {
+      } catch (error: any) {
         logger.error('Error processing webhook payment:', error);
         return NextResponse.json(
           { error: 'Failed to process payment' },

@@ -4,12 +4,13 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
+import { trackEvent, EventType } from '@/lib/analytics';
 
 export default function SuccessPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get('session_id');
-  const { refreshTokenCount } = useAuth();
+  const { refreshTokenCount, user } = useAuth();
   const [isProcessing, setIsProcessing] = useState(true);
   const [success, setSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -36,6 +37,14 @@ export default function SuccessPage() {
         setTimeout(() => {
           router.push('/');
         }, 3000);
+
+        // Track event
+        trackEvent(EventType.TOKEN_PURCHASE, {
+          sessionId,
+          userId: user?.id,
+          status: 'success',
+          timestamp: new Date().toISOString()
+        });
       } catch (error) {
         console.error('Error verifying payment:', error);
         setErrorMessage('Failed to verify payment. Your account will be updated soon.');
@@ -44,7 +53,7 @@ export default function SuccessPage() {
     };
 
     verifyPayment();
-  }, [sessionId, refreshTokenCount, router]);
+  }, [sessionId, refreshTokenCount, router, user]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-black via-zinc-900 to-black text-white p-4">

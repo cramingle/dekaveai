@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createCheckoutSession } from '@/lib/stripe';
 import logger from '@/lib/logger';
+import { trackEvent, EventType } from '@/lib/analytics';
 
 // Simple in-memory rate limiting for payment endpoint
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { email, userId } = await request.json();
+    const { email, userId, packageId = 'basic' } = await request.json();
 
     // Validate input
     if (!email) {
@@ -73,59 +74,46 @@ export async function POST(request: NextRequest) {
     const successUrl = `${origin}/success?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${origin}/`;
 
-    // Create a checkout session with userId
+    // Create a checkout session with userId and packageId
     const checkoutUrl = await createCheckoutSession(
       email,
       successUrl,
       cancelUrl,
-      userId
+      userId,
+      packageId
     );
 
     if (!checkoutUrl) {
+      // Track failure
+      trackEvent(EventType.TOKEN_PURCHASE, { 
+        userId,
+        email,
+        packageId,
+        status: 'failed',
+        error: 'Failed to create checkout session',
+        timestamp: new Date().toISOString()
+      });
+      
       return NextResponse.json(
         { error: 'Failed to create checkout session' },
         { status: 500 }
       );
     }
 
+    // Track successful checkout URL creation
+    trackEvent(EventType.TOKEN_PURCHASE, { 
+      userId,
+      email,
+      packageId,
+      status: 'checkout_created',
+      timestamp: new Date().toISOString()
+    });
+
     return NextResponse.json({ checkoutUrl });
   } catch (error) {
     logger.error('Error creating checkout session:', error);
     return NextResponse.json(
       { error: 'Failed to create checkout session' },
-      { status: 500 }
-    );
-  }
-}
-
-// Demo route for simulating payment success
-export async function GET(request: NextRequest) {
-  try {
-    // In a real app, we would verify the payment and create a user account
-    // For demo, we'll just return a success message
-    
-    const searchParams = request.nextUrl.searchParams;
-    const email = searchParams.get('email');
-    
-    if (!email) {
-      return NextResponse.json(
-        { error: 'Email is required' },
-        { status: 400 }
-      );
-    }
-    
-    // Mock user creation and token assignment
-    return NextResponse.json({
-      success: true,
-      message: 'Payment successful! 10 tokens added to your account.',
-      userId: 'demo-user-123',
-      email,
-      tokens: 10
-    });
-  } catch (error) {
-    console.error('Error processing demo payment:', error);
-    return NextResponse.json(
-      { error: 'Failed to process demo payment' },
       { status: 500 }
     );
   }

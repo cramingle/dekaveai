@@ -13,6 +13,7 @@ import { getConversationContext, storeConversationContext } from './supabase';
 import type { NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import type { DefaultSession } from 'next-auth';
+import { trackEvent, EventType } from '@/lib/analytics';
 
 // Add interface for extended user
 interface ExtendedUser {
@@ -169,11 +170,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Function to sign in with Google
   const signInWithGoogle = async () => {
-    await signIn('google', { callbackUrl: '/api/checkout' });
+    // Track sign in attempt
+    trackEvent(EventType.SIGN_IN, {
+      method: 'google',
+      timestamp: new Date().toISOString()
+    });
+    
+    await signIn('google', { callbackUrl: '/api/checkout?newUser=true' });
   };
 
   // Function to log out
   const logout = async () => {
+    // Track logout
+    trackEvent(EventType.SIGN_IN, {
+      action: 'logout',
+      userId: user?.id,
+      timestamp: new Date().toISOString()
+    });
+    
     await signOut({ callbackUrl: '/' });
   };
 
@@ -192,6 +206,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setTokens(data.tokens);
         setTokensExpiryDate(data.tokens_expiry_date);
         setTier(data.tier);
+        
+        // Track token refresh
+        trackEvent(EventType.TOKEN_USAGE, {
+          action: 'refresh',
+          userId: session.user.id,
+          tokens: data.tokens,
+          tier: data.tier,
+          expiryDate: data.tokens_expiry_date,
+          timestamp: new Date().toISOString()
+        });
       }
     } catch (error) {
       console.error('Error refreshing token count:', error);
@@ -218,6 +242,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const amount = parseInt(packageId.replace('subtract-', '')) || 10000;
         const newTokenCount = Math.max(0, tokens - amount);
         
+        // Track token usage
+        trackEvent(EventType.TOKEN_USAGE, {
+          userId: session.user.id,
+          action: 'subtract',
+          amount: amount,
+          newBalance: newTokenCount,
+          timestamp: new Date().toISOString()
+        });
+        
         const { error } = await supabase
           .from('users')
           .update({
@@ -239,6 +272,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!selectedPackage) {
         return { success: false, error: 'Invalid package' };
       }
+      
+      // Track token purchase
+      trackEvent(EventType.TOKEN_PURCHASE, {
+        userId: session.user.id,
+        packageId: packageId,
+        tokens: selectedPackage.tokens,
+        tier: selectedPackage.tier,
+        action: 'direct_purchase',
+        timestamp: new Date().toISOString()
+      });
       
       // Create expiry date (28 days from now)
       const expiryDate = new Date();
@@ -267,6 +310,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: true };
     } catch (error) {
       console.error('Error buying tokens:', error);
+      
+      // Track error
+      trackEvent(EventType.TOKEN_PURCHASE, {
+        userId: session?.user?.id,
+        packageId: packageId,
+        status: 'error',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      });
+      
       return { success: false, error: 'Failed to purchase tokens' };
     }
   };
