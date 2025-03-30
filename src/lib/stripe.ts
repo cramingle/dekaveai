@@ -4,7 +4,7 @@ import Stripe from 'stripe';
 const STRIPE_CONFIG = {
   secretKey: process.env.STRIPE_SECRET_KEY,
   publishableKey: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
-  priceId: process.env.STRIPE_PRICE_ID || 'price_mock_123456789',
+  priceId: process.env.STRIPE_PRICE_ID,
   webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
   // Map price IDs to token quantities and tiers
   tokenPackages: {
@@ -15,53 +15,24 @@ const STRIPE_CONFIG = {
   }
 };
 
-// Create a real or mock Stripe client based on available credentials
-let stripe: Stripe | any;
-
-// If we don't have the required environment variables, use a mock implementation
+// Check for required environment variables
 if (!STRIPE_CONFIG.secretKey) {
-  // Mock Stripe implementation
-  stripe = {
-    checkout: {
-      sessions: {
-        create: async (options: any) => {
-          console.log('Mock Stripe: Creating checkout session', options);
-          return {
-            url: '/success?session_id=mock_session_123',
-            id: 'mock_session_123'
-          };
-        },
-        retrieve: async (sessionId: string) => {
-          console.log('Mock Stripe: Retrieving session', sessionId);
-          return {
-            payment_status: 'paid',
-            customer_email: 'mock@example.com'
-          };
-        },
-        listLineItems: async (sessionId: string) => {
-          console.log('Mock Stripe: Listing line items for session', sessionId);
-          return {
-            data: [
-              {
-                price: {
-                  id: 'price_basic'
-                }
-              }
-            ]
-          };
-        }
-      }
-    }
-  };
-  
-  console.log('Using mock Stripe client for demo purposes');
-} else {
-  // Initialize the real Stripe client with the latest API version
-  stripe = new Stripe(STRIPE_CONFIG.secretKey, {
-    apiVersion: '2024-04-10', // Latest API version
-    typescript: true
-  });
+  throw new Error('STRIPE_SECRET_KEY is not set. Please set this environment variable to use Stripe services.');
 }
+
+if (!STRIPE_CONFIG.publishableKey) {
+  throw new Error('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is not set. Please set this environment variable to use Stripe services.');
+}
+
+if (!STRIPE_CONFIG.priceId) {
+  throw new Error('STRIPE_PRICE_ID is not set. Please set this environment variable to use Stripe services.');
+}
+
+// Initialize the real Stripe client with the latest API version
+const stripe = new Stripe(STRIPE_CONFIG.secretKey, {
+  apiVersion: '2024-04-10', // Latest API version
+  typescript: true
+});
 
 // Export the price ID and token package mapping
 export const PRICE_ID = STRIPE_CONFIG.priceId;
@@ -121,13 +92,17 @@ export async function verifyPayment(sessionId: string): Promise<boolean> {
 }
 
 // Get customer information from a session
-export async function getCustomerFromSession(sessionId: string): Promise<any> {
+export async function getCustomerFromSession(sessionId: string): Promise<{
+  email?: string;
+  userId?: string;
+  packageId?: string;
+} | null> {
   try {
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     return {
-      email: session.customer_details?.email,
-      userId: session.client_reference_id,
-      packageId: session.metadata?.packageId
+      email: session.customer_details?.email || undefined,
+      userId: session.client_reference_id || undefined,
+      packageId: session.metadata?.packageId || undefined
     };
   } catch (error) {
     console.error('Error retrieving customer info:', error);

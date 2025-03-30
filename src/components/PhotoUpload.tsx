@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
+import Image from 'next/image';
 
 type PhotoUploadProps = {
   onUpload: (file: File) => void;
@@ -46,11 +47,16 @@ export function PhotoUpload({ onUpload }: PhotoUploadProps) {
         
         {preview ? (
           <div className="space-y-4">
-            <img 
-              src={preview} 
-              alt="Preview" 
-              className="max-h-56 mx-auto object-contain rounded-md" 
-            />
+            <div className="relative w-full h-56 mx-auto">
+              <Image 
+                src={preview} 
+                alt="Preview" 
+                className="object-contain rounded-md" 
+                fill
+                sizes="(max-width: 768px) 100vw, 400px"
+                priority
+              />
+            </div>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Click or drag to replace the image
             </p>

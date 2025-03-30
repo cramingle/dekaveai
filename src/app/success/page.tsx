@@ -1,12 +1,42 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
 import { trackEvent, EventType } from '@/lib/analytics';
 
-export default function SuccessPage() {
+// Loading component to use during suspense
+function Loading() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-black via-zinc-900 to-black text-white p-4">
+      <motion.div 
+        className="w-full max-w-md bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl overflow-hidden"
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="bg-gradient-to-r from-zinc-800 to-zinc-900 py-6 px-6 text-center relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+          <h2 className="text-2xl font-bold text-white">Loading</h2>
+          
+          <div className="absolute -right-8 -top-8 w-16 h-16 rounded-full bg-white/5 blur-xl"></div>
+          <div className="absolute -left-4 -bottom-4 w-12 h-12 rounded-full bg-white/5 blur-lg"></div>
+        </div>
+        
+        <div className="p-6">
+          <div className="text-center py-8">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white mb-4"></div>
+            <p className="text-zinc-300">Loading payment status...</p>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// The actual SuccessPage component wrapped in Suspense
+function SuccessPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get('session_id');
@@ -112,5 +142,14 @@ export default function SuccessPage() {
         </div>
       </motion.div>
     </div>
+  );
+}
+
+// Export the page with Suspense boundary
+export default function SuccessPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <SuccessPageContent />
+    </Suspense>
   );
 } 

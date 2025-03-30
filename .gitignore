@@ -38,9 +38,23 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# IDE files
+.idea
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Generated images
+/public/uploads
+/public/generated
+
 # Logs
 logs
 *.log
+
+# Temporary files
+.tmp
+.temp
 
 # Database files with sensitive information
 /sql/schema_update.sql

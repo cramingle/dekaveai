@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Image from 'next/image';
 
 type ResultsViewProps = {
   enhancedImageUrl: string;
@@ -67,11 +68,16 @@ export function ResultsView({
       
       <div className="bg-white dark:bg-black border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
         <div className="p-4">
-          <img
-            src={selectedTab === 'ad' ? adImageUrl : enhancedImageUrl}
-            alt={selectedTab === 'ad' ? 'Generated Ad' : 'Enhanced Photo'}
-            className="max-h-96 mx-auto object-contain rounded"
-          />
+          <div className="relative w-full h-96 mx-auto">
+            <Image
+              src={selectedTab === 'ad' ? adImageUrl : enhancedImageUrl}
+              alt={selectedTab === 'ad' ? 'Generated Ad' : 'Enhanced Photo'}
+              className="object-contain rounded"
+              fill
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+              priority
+            />
+          </div>
         </div>
         
         <div className="border-t border-gray-200 dark:border-gray-800 p-4 flex justify-between">

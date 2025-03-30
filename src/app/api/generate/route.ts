@@ -92,10 +92,11 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    // Load previous conversation context if requested
-    let conversationContext = null;
+    // Load previous conversation context if needed
     if (!resetConversation) {
-      conversationContext = await getUserConversation(userId);
+      // Get the conversation but we don't need to store it in a variable
+      // since processRequest will handle the conversation state internally using userId
+      await getUserConversation(userId);
     }
     
     // Process the request with user ID to maintain conversation context
@@ -139,8 +140,8 @@ export async function POST(req: NextRequest) {
     logger.error('Error generating ad:', error);
     
     // Get user ID from error if available
-    const errorObj = error as any;
-    const userId = errorObj?.userId || errorObj?.user?.id;
+    const errorObj = error as Record<string, unknown>;
+    const userId = errorObj?.userId as string || (errorObj?.user as Record<string, unknown>)?.id as string;
     
     if (userId) {
       // Track generation error for analytics
