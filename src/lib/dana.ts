@@ -70,7 +70,9 @@ export async function createDanaPayment(
     
     // Now we'll call our API route to create the payment instead of doing it client-side
     const apiUrl = typeof window === 'undefined' 
-      ? `${BASE_URL}/api/payment`
+      ? (BASE_URL.includes('REQUIRED') 
+          ? 'https://dekaveai.vercel.app/api/payment' 
+          : `${BASE_URL}/api/payment`)
       : '/api/payment';
       
     logger.info('Making Dana payment request to', { url: apiUrl });

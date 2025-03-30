@@ -3,12 +3,19 @@
 
 // Base URL for the application
 export const BASE_URL = (() => {
-  // First, try the explicitly set NEXTAUTH_URL
+  // Check if we're in a weird state where BASE_URL would be "REQUIRED"
+  // This is happening in certain Vercel serverless functions
+  if (process.env.NODE_ENV === 'production') {
+    // Hard-code the production URL since we know what it is
+    return 'https://dekaveai.vercel.app';
+  }
+
+  // For explicitly set NEXTAUTH_URL (only as fallback)
   if (process.env.NEXTAUTH_URL) {
     return process.env.NEXTAUTH_URL;
   }
   
-  // For production Vercel environment
+  // For Vercel environments
   if (process.env.VERCEL_URL) {
     return `https://${process.env.VERCEL_URL}`;
   }
@@ -16,11 +23,6 @@ export const BASE_URL = (() => {
   // For client-side
   if (typeof window !== 'undefined') {
     return window.location.origin;
-  }
-  
-  // Fallback to production URL
-  if (process.env.NODE_ENV === 'production') {
-    return 'https://dekaveai.vercel.app';
   }
   
   // Local development fallback

@@ -45,7 +45,10 @@ export async function trackEvent(eventType: EventType, data: Record<string, any>
     // This could be a custom endpoint that stores events in a database
     if (typeof window === 'undefined' && process.env.NODE_ENV === 'production') {
       try {
-        const trackUrl = `${BASE_URL}/api/track`;
+        const trackUrl = BASE_URL.includes('REQUIRED')
+          ? 'https://dekaveai.vercel.app/api/track'
+          : `${BASE_URL}/api/track`;
+          
         await fetch(trackUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
