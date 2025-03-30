@@ -61,3 +61,9 @@ logs
 /sql/supabase_rls_policies.sql
 /sql/conversation_context_migration.sql
 /sql/setup-nextauth-schema.sql
+
+# DANA API Documentation
+qris_*.txt
+*qris*.txt
+/docs/dana/*.txt
+!/docs/dana/README.md
