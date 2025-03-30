@@ -149,43 +149,14 @@ export async function POST(request: NextRequest) {
         subMerchantId: "", // Optional
         storeId: "DEKAVE", // Unique identifier for our store
         terminalId: "", // Optional
-        partnerReferenceNo: merchantOrderNo,
+        partnerReferenceNo: merchantOrderNo, // Mandatory, 64 max
         amount: {
           value: amount.toFixed(2),
           currency: "IDR"
-        },
-        // Optional fee if needed
-        // feeAmount: {
-        //   value: "0.00",
-        //   currency: "IDR"
-        // },
-        // Optional validity period
-        // validityPeriod: new Date(Date.now() + 15*60*1000).toISOString().replace('Z', '+07:00'),
-        additionalInfo: {
-          terminalSource: "MER",
-          envInfo: {
-            sessionId: merchantOrderNo,
-            tokenId: crypto.randomUUID(),
-            websiteLanguage: "en_US",
-            clientIp: request.headers.get('x-forwarded-for') || "unknown",
-            osType: "Web.PC",
-            appVersion: "1.0",
-            sdkVersion: "1.0",
-            sourcePlatform: "IPG",
-            terminalType: "SYSTEM",
-            orderTerminalType: "WEB",
-            orderOsType: "WEB",
-            merchantAppVersion: "1.0",
-            extendInfo: JSON.stringify({
-              deviceId: request.headers.get('user-agent') || "unknown",
-              bizScenario: "DEKAVE_TOKEN_PURCHASE",
-              productDetails: description
-            })
-          }
         }
       };
       
-      // Generate signature using DANA's signature format
+      // Generate signature using DANA's signature format - using asymmetricSignature method according to docs
       const signatureBase = JSON.stringify(payload);
       logger.info('Generating signature with base', { 
         signatureBase: signatureBase.substring(0, 50) + '...',
@@ -209,13 +180,13 @@ export async function POST(request: NextRequest) {
         .substring(0, 5)
         .toUpperCase();
       
-      // Create headers using the Headers API to handle undefined values
+      // Create headers using the Headers API exactly as shown in documentation
       const headers = new Headers();
       headers.set('Content-Type', 'application/json');
       headers.set('X-TIMESTAMP', danaTimestamp);
       headers.set('X-SIGNATURE', signature);
       headers.set('ORIGIN', getUrl('/').replace(/^https?:\/\//, ''));
-      if (DANA_CLIENT_ID) headers.set('X-PARTNER-ID', DANA_CLIENT_ID);
+      headers.set('X-PARTNER-ID', DANA_CLIENT_ID || "");
       headers.set('X-EXTERNAL-ID', merchantOrderNo);
       headers.set('CHANNEL-ID', channelIdHash);
       
@@ -223,7 +194,7 @@ export async function POST(request: NextRequest) {
         url: `${DANA_API_BASE_URL}${DANA_PAYMENT_ENDPOINT}`,
         merchantOrderNo: payload.partnerReferenceNo,
         merchantId: DANA_MERCHANT_ID,
-        amount: amount.toFixed(2),
+        amount: payload.amount.value,
         headers: Object.fromEntries(headers.entries()),
         payload: JSON.stringify(payload).substring(0, 100) + '...'
       });
@@ -311,7 +282,7 @@ export async function POST(request: NextRequest) {
             logger.error('Dana payment failed - API returned error', {
               error: data.responseMessage || data.errorMessage || 'Unknown error',
               code: data.responseCode || data.errorCode || 'UNKNOWN',
-              partnerReferenceNo: payload.partnerReferenceNo
+              orderId: payload.partnerReferenceNo
             });
             
             // Track failure
