@@ -22,6 +22,7 @@ interface ExtendedUser {
   tokens_expiry_date?: string;
   hasStoredConversation?: boolean;
   conversationLastUsed?: string;
+  hasLoggedInBefore: boolean;
   [key: string]: any; // For other properties
 }
 
@@ -65,6 +66,7 @@ export const authOptions: NextAuthOptions = {
             extendedUser.tokens = userData.tokens || 0;
             extendedUser.tier = userData.tier || 'Pioneer';
             extendedUser.tokens_expiry_date = userData.tokens_expiry_date;
+            extendedUser.hasLoggedInBefore = ((userData.tokens ?? 0) > 0 || !!userData.tokens_expiry_date);
             
             // Add conversation context info
             if (userData.conversation_last_used) {
@@ -148,7 +150,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (session?.user) {
       setIsAuthenticated(true);
-      setUser(session.user);
+      setUser({
+        ...session.user,
+        hasLoggedInBefore: ((session.user.tokens ?? 0) > 0 || !!session.user.tokens_expiry_date)
+      });
       setTokens(session.user.tokens || 0);
       setTokensExpiryDate(session.user.tokens_expiry_date);
       setTier(session.user.tier || 'Pioneer');
@@ -164,7 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Function to sign in with Google
   const signInWithGoogle = async () => {
-    await signIn('google', { callbackUrl: '/' });
+    await signIn('google', { callbackUrl: '/api/checkout' });
   };
 
   // Function to log out

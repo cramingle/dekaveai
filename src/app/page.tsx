@@ -81,6 +81,29 @@ export default function Home() {
     };
   }, []);
   
+  // Show token purchase modal only for authenticated users who have had tokens before
+  // but now have 0 tokens (tokens expired), not for new users
+  useEffect(() => {
+    // Check if the user has previously had tokens but they are now at 0
+    // This would indicate an existing user who needs to top up
+    if (isAuthenticated && tokens === 0 && user?.hasLoggedInBefore) {
+      setShowTokenTopup(true);
+    }
+    
+    // Check for URL parameter (for manual token purchase)
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('showTokenTopup') === 'true' && isAuthenticated) {
+        setShowTokenTopup(true);
+        
+        // Clean the URL to remove the parameter (to avoid showing the modal again on refresh)
+        const url = new URL(window.location.href);
+        url.searchParams.delete('showTokenTopup');
+        window.history.replaceState({}, '', url.toString());
+      }
+    }
+  }, [isAuthenticated, tokens, user]);
+  
   // Token utility functions
   const getMaxTokens = () => {
     // Use a consistent upper limit for all users, not based on tier
