@@ -131,7 +131,9 @@ export async function POST(request: NextRequest) {
       const merchantOrderNo = `DEKAVE${userId.substring(0, 6)}${timestamp}${Math.floor(Math.random() * 1000)}`;
       
       // Format timestamp in DANA format (YYYY-MM-DDTHH:mm:ss+07:00)
-      const danaTimestamp = new Date().toISOString().replace('Z', '+07:00');
+      // Use correct timezone format for Indonesia (GMT+7)
+      const date = new Date();
+      const danaTimestamp = date.toISOString().replace('Z', '+07:00');
       
       // Create request payload based on QRIS MPM (Acquirer) Generate QRIS API
       const payload = {
@@ -201,7 +203,7 @@ export async function POST(request: NextRequest) {
           'X-SIGNATURE': signature,
           'ORIGIN': getUrl('/'),
           'X-PARTNER-ID': DANA_MERCHANT_ID,
-          'X-EXTERNAL-ID': crypto.randomUUID(),
+          'X-EXTERNAL-ID': merchantOrderNo,
           'CHANNEL-ID': '00001' // Web channel ID
         },
         body: JSON.stringify(payload)
