@@ -203,7 +203,9 @@ export async function POST(request: NextRequest) {
       };
       
       // Generate signature using DANA's signature format
-      const signatureBase = `POST:${DANA_PAYMENT_ENDPOINT}:${crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex').toLowerCase()}:${danaTimestamp}`;
+      // Need to include B2B access token and use HMAC-SHA512 as per Dana documentation
+      const payloadHash = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex').toLowerCase();
+      const signatureBase = `POST:${DANA_PAYMENT_ENDPOINT}:${DANA_CLIENT_SECRET}:${payloadHash}:${danaTimestamp}`;
       
       logger.info('Generating signature with base', { 
         signatureBase: signatureBase.substring(0, 50) + '...',
@@ -211,7 +213,7 @@ export async function POST(request: NextRequest) {
       });
       
       const signature = crypto
-        .createHmac('sha256', DANA_API_SECRET)
+        .createHmac('sha512', DANA_API_SECRET)
         .update(signatureBase)
         .digest('base64');
       
@@ -222,7 +224,7 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
         'X-TIMESTAMP': danaTimestamp,
         'X-SIGNATURE': signature,
-        'ORIGIN': getUrl('/').replace(/^https?:\/\//, ''),
+        'ORIGIN': getUrl('/').replace(/^https?:\/\//, '').replace(/\/$/, ''),
         'X-PARTNER-ID': DANA_CLIENT_ID || "",
         'X-EXTERNAL-ID': merchantOrderNo,
         'CHANNEL-ID': channelIdHash
