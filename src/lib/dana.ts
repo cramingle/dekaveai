@@ -103,14 +103,20 @@ export async function createDanaPayment(
         const errorData = await response.json();
         logger.error('Dana payment creation failed with JSON error', { 
           status: response.status, 
-          error: errorData 
+          statusText: response.statusText,
+          url: apiUrl,
+          error: errorData,
+          timestamp: new Date().toISOString()
         });
       } catch (jsonError) {
         // If JSON parsing fails, get text response instead
         const textResponse = await response.text();
         logger.error('Dana payment creation failed with text response', {
           status: response.status,
-          text: textResponse
+          statusText: response.statusText,
+          url: apiUrl,
+          text: textResponse,
+          timestamp: new Date().toISOString()
         });
       }
       return null;
