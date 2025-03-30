@@ -12,8 +12,8 @@ const DANA_API_BASE_URL = DANA_ENVIRONMENT === 'production'
   ? 'https://api.saas.dana.id'
   : 'https://api.sandbox.dana.id';
 
-// Use the correct QRIS generation endpoint from documentation
-const DANA_PAYMENT_ENDPOINT = '/v1.0/qr/qr-mpm-generate.htm';
+// Updated endpoint from the new documentation
+const DANA_PAYMENT_ENDPOINT = '/v1.0/payment-gateway/payment.htm';
 
 // Simple in-memory rate limiting for payment endpoint
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
@@ -131,9 +131,7 @@ export async function POST(request: NextRequest) {
       const merchantOrderNo = `DEKAVE${userId.substring(0, 6)}${timestamp}${Math.floor(Math.random() * 1000)}`;
       
       // Format timestamp in DANA format (YYYY-MM-DDTHH:mm:ss+07:00)
-      // Use correct timezone format for Indonesia (GMT+7)
       const date = new Date();
-      // Format manually to ensure correct format: YYYY-MM-DDTHH:mm:ss+07:00
       const pad = (num: number) => num.toString().padStart(2, '0');
       const year = date.getUTCFullYear();
       const month = pad(date.getUTCMonth() + 1);
@@ -143,33 +141,7 @@ export async function POST(request: NextRequest) {
       const seconds = pad(date.getUTCSeconds());
       const danaTimestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+07:00`;
       
-      // Create request payload with only mandatory fields
-      const payload = {
-        merchantId: DANA_MERCHANT_ID,
-        storeId: "DEKAVE",
-        partnerReferenceNo: merchantOrderNo,
-        amount: {
-          value: amount.toFixed(2),
-          currency: "IDR"
-        }
-      };
-      
-      // Generate signature using DANA's signature format - using asymmetricSignature method according to docs
-      const signatureBase = JSON.stringify(payload);
-      logger.info('Generating signature with base', { 
-        signatureBase: signatureBase.substring(0, 50) + '...',
-        secretLength: DANA_API_SECRET.length
-      });
-      const signature = crypto
-        .createHmac('sha256', DANA_API_SECRET)
-        .update(signatureBase)
-        .digest('hex')
-        .toLowerCase(); // Ensure lowercase to match sample
-      
-      logger.info('Generated signature', { signature });
-        
-      // Generate a channel ID based on user agent or device information
-      // We'll extract first 5 chars of a hash of the user agent to stay within the 5 character limit
+      // Generate channel ID based on user agent (5 chars max)
       const userAgent = request.headers.get('user-agent') || 'unknown';
       const channelIdHash = crypto
         .createHash('md5')
@@ -178,7 +150,74 @@ export async function POST(request: NextRequest) {
         .substring(0, 5)
         .toUpperCase();
       
-      // Create headers as a plain object exactly as shown in the documentation
+      // Create request payload based on Payment Gateway Plugin documentation
+      const payload = {
+        partnerReferenceNo: merchantOrderNo,
+        merchantId: DANA_MERCHANT_ID,
+        subMerchantId: "", // Optional
+        amount: {
+          value: amount.toFixed(2),
+          currency: "IDR"
+        },
+        externalStoreId: "DEKAVE", // Optional store identifier
+        urlParams: [
+          {
+            url: getUrl('/api/webhooks/dana/redirect'),
+            type: "PAY_RETURN",
+            isDeeplink: "N"
+          },
+          {
+            url: getUrl('/api/webhooks/dana/payment'),
+            type: "NOTIFICATION",
+            isDeeplink: "N"
+          }
+        ],
+        additionalInfo: {
+          order: {
+            orderTitle: description,
+            scenario: "REDIRECTION",
+            goods: [
+              {
+                category: "digital_goods",
+                price: {
+                  value: amount.toFixed(2),
+                  currency: "IDR"
+                },
+                merchantGoodsId: packageId,
+                description: description,
+                quantity: "1"
+              }
+            ],
+            buyer: {
+              nickname: email.split('@')[0],
+              externalUserId: userId.substring(0, 30)
+            }
+          },
+          mcc: "5817", // Digital Goods
+          envInfo: {
+            sourcePlatform: "IPG",
+            terminalType: "WEB",
+            orderTerminalType: "WEB"
+          }
+        }
+      };
+      
+      // Generate signature using DANA's signature format
+      const signatureBase = `POST:${DANA_PAYMENT_ENDPOINT}:${crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex').toLowerCase()}:${danaTimestamp}`;
+      
+      logger.info('Generating signature with base', { 
+        signatureBase: signatureBase.substring(0, 50) + '...',
+        secretLength: DANA_API_SECRET.length
+      });
+      
+      const signature = crypto
+        .createHmac('sha256', DANA_API_SECRET)
+        .update(signatureBase)
+        .digest('base64');
+      
+      logger.info('Generated signature', { signature });
+        
+      // Create headers as specified in the documentation
       const headers = {
         'Content-Type': 'application/json',
         'X-TIMESTAMP': danaTimestamp,
@@ -227,9 +266,9 @@ export async function POST(request: NextRequest) {
           const data = await response.json();
           
           // Check if the response is successful based on DANA documentation
-          if (data.success && data.qrCode) {
-            // The QRIS qrCode is the string representation of the QR Code
-            const qrCode = data.qrCode;
+          if (data.responseCode === "2000000" && data.webRedirectUrl) {
+            // The webRedirectUrl is the payment URL for the user
+            const paymentUrl = data.webRedirectUrl;
             
             // Update the successful transaction in database
             await db.insert(transactions).values({
@@ -242,11 +281,10 @@ export async function POST(request: NextRequest) {
               description,
               metadata: {
                 merchantOrderNo: payload.partnerReferenceNo,
-                qrCode,
+                paymentUrl,
                 orderAmount: amount,
                 currency: "IDR",
-                referenceId: data.referenceId || "",
-                orderId: data.orderId || ""
+                referenceNo: data.referenceNo || ""
               },
               createdAt: new Date()
             });
@@ -256,25 +294,25 @@ export async function POST(request: NextRequest) {
               orderId: payload.partnerReferenceNo,
               packageId,
               userId,
-              qrCode: qrCode.substring(0, 20) + '...' // Log only part of QR code for security
+              paymentUrl: paymentUrl.substring(0, 50) + '...' // Log only part of URL
             });
             
-            // Track successful payment QR generation
+            // Track successful payment URL generation
             trackEvent(EventType.TOKEN_PURCHASE, { 
               userId,
               email,
               packageId,
               provider: 'dana',
-              status: 'qr_generated',
+              status: 'payment_url_generated',
               timestamp: new Date().toISOString()
             });
             
-            // Return successful response with QR code
+            // Return successful response with payment URL
             return NextResponse.json({
               success: true,
               orderId: payload.partnerReferenceNo,
-              qrCode: qrCode,
-              expireTime: data.expireTime || 15 // minutes
+              paymentUrl: paymentUrl,
+              expireTime: 15 // minutes
             });
           } else {
             // Handle API error response
@@ -290,7 +328,7 @@ export async function POST(request: NextRequest) {
               email,
               packageId,
               provider: 'dana',
-              status: 'qr_generation_failed',
+              status: 'payment_url_generation_failed',
               error: data.responseMessage || data.errorMessage || 'Unknown error',
               timestamp: new Date().toISOString()
             });
