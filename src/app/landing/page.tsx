@@ -76,10 +76,10 @@ export default function LandingPage() {
                 className="w-full bg-transparent py-3 md:py-4 px-4 md:px-6 text-white placeholder-zinc-500 focus:outline-none text-sm md:text-base"
               />
               <button className="bg-white text-black font-medium rounded-full py-2 md:py-3 px-4 md:px-6 mx-2 hover:bg-gray-200 transition-all text-sm md:text-base whitespace-nowrap">
-                Get Free Credits
+                Get Started
               </button>
             </div>
-            <p className="text-xs text-zinc-500 mt-2 text-center">Join our newsletter for tips & tricks and get free generation credits</p>
+            <p className="text-xs text-zinc-500 mt-2 text-center">Join our newsletter for product updates and AI marketing tips</p>
           </div>
           
           {/* Description */}

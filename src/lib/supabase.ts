@@ -4,129 +4,30 @@ import { createClient } from '@supabase/supabase-js';
 export type UserData = {
   id: string;
   email: string;
+  name?: string;
+  avatar_url?: string;
+  provider?: string;
   tokens: number;
-  tier: 'free' | 'basic' | 'pro' | 'enterprise';
-  ipAddress?: string;
-  createdAt: string;
-  lastLogin: string;
-  tokens_expiry_date?: string; // Optional for backward compatibility
+  tier: 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord';
+  created_at: string;
+  tokens_expiry_date?: string;
+  tokens_refreshed_at?: string;
+  generation_count?: number;
+  conversation_context?: string;
+  conversation_last_used?: string;
 };
 
 // Check if we have Supabase environment variables
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-// Log warning if environment variables are missing
+// Ensure we have Supabase credentials
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn(
-    'Supabase environment variables are missing. Using mock implementation. ' +
-    'Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your .env.local file.'
-  );
+  throw new Error('Supabase environment variables are required. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your .env.local file.');
 }
 
-// Create a real or mock Supabase client based on available credentials
-export let supabase: any;
-
-// If no Supabase credentials, use a mock implementation for demo purposes
-if (!supabaseUrl || !supabaseAnonKey) {
-  // Mock Supabase client with in-memory storage
-  const mockUsers: Record<string, UserData> = {
-    'demo-user-123': {
-      id: 'demo-user-123',
-      email: 'demo@example.com',
-      tokens: 3,
-      tier: 'free',
-      ipAddress: '127.0.0.1',
-      createdAt: new Date().toISOString(),
-      lastLogin: new Date().toISOString()
-    }
-  };
-
-  // Mock IP tracking for free accounts
-  const ipToUserMap: Record<string, string> = {
-    '127.0.0.1': 'demo-user-123'
-  };
-
-  // Create a mock client with the same interface methods we use
-  supabase = {
-    from: (table: string) => {
-      if (table === 'users') {
-        return {
-          select: () => ({
-            eq: (field: string, value: string) => ({
-              single: async () => {
-                const user = mockUsers[value];
-                return {
-                  data: user || null,
-                  error: user ? null : { message: 'User not found' }
-                };
-              }
-            })
-          }),
-          update: (data: Partial<UserData>) => ({
-            eq: (field: string, value: string) => {
-              if (mockUsers[value]) {
-                mockUsers[value] = { ...mockUsers[value], ...data };
-                return { error: null };
-              }
-              return { error: { message: 'User not found' } };
-            }
-          }),
-          insert: (data: Partial<UserData>) => {
-            const id = `user-${Date.now()}`;
-            mockUsers[id] = {
-              id,
-              email: data.email || '',
-              tokens: data.tokens || 0,
-              tier: data.tier || 'free',
-              ipAddress: data.ipAddress,
-              createdAt: new Date().toISOString(),
-              lastLogin: new Date().toISOString()
-            };
-            if (data.ipAddress) {
-              ipToUserMap[data.ipAddress] = id;
-            }
-            return {
-              data: { id },
-              error: null
-            };
-          }
-        };
-      } else if (table === 'ip_tracking') {
-        return {
-          select: () => ({
-            eq: (field: string, value: string) => ({
-              single: async () => {
-                const userId = ipToUserMap[value];
-                return {
-                  data: userId ? { ip: value, userId } : null,
-                  error: null
-                };
-              }
-            })
-          }),
-          insert: (data: { ip: string; userId: string }) => {
-            ipToUserMap[data.ip] = data.userId;
-            return {
-              data: { id: Date.now() },
-              error: null
-            };
-          }
-        };
-      }
-      return {
-        select: () => ({ eq: () => ({ single: async () => ({ data: null, error: null }) }) }),
-        update: () => ({ eq: () => ({ error: null }) }),
-        insert: () => ({ error: null })
-      };
-    }
-  };
-  
-  console.log('Using mock Supabase client for demo purposes');
-} else {
-  // Initialize the real Supabase client
-  supabase = createClient(supabaseUrl, supabaseAnonKey);
-}
+// Initialize the Supabase client
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Helper function to get user data from Supabase
 export async function getUserData(userId: string): Promise<UserData | null> {
@@ -159,41 +60,13 @@ export async function updateUserTokens(userId: string, tokens: number): Promise<
   return true;
 }
 
-// Helper function to check if IP has a free account already
-export async function checkIPHasFreeAccount(ipAddress: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('ip_tracking')
-    .select('userId')
-    .eq('ip', ipAddress)
-    .single();
-
-  if (error) {
-    // No record found, IP doesn't have a free account
-    return false;
-  }
-
-  // If we have data, IP is already associated with an account
-  return !!data;
-}
-
-// Helper function to create a new user with IP tracking
+// Helper function to create a new user
 export async function createUser(
   email: string, 
   ipAddress: string, 
-  tier: 'free' | 'basic' | 'pro' | 'enterprise' = 'free',
-  initialTokens: number = tier === 'free' ? 3 : 10
+  tier: 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord' = 'Pioneer',
+  initialTokens: number = 0
 ): Promise<{ userId: string | null; error: string | null }> {
-  // If it's a free tier registration, check if IP already has an account
-  if (tier === 'free') {
-    const hasAccount = await checkIPHasFreeAccount(ipAddress);
-    if (hasAccount) {
-      return { 
-        userId: null, 
-        error: 'This IP address already has a free account. Only one free account per IP is allowed.' 
-      };
-    }
-  }
-
   // Create the user
   const { data: userData, error: userError } = await supabase
     .from('users')
@@ -201,9 +74,8 @@ export async function createUser(
       email,
       tokens: initialTokens,
       tier,
-      ipAddress,
-      createdAt: new Date().toISOString(),
-      lastLogin: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      tokens_refreshed_at: new Date().toISOString()
     });
 
   if (userError) {
@@ -211,24 +83,7 @@ export async function createUser(
     return { userId: null, error: 'Failed to create user account.' };
   }
 
-  const userId = userData?.id;
-
-  // Track the IP for free tier users
-  if (tier === 'free') {
-    const { error: ipError } = await supabase
-      .from('ip_tracking')
-      .insert({
-        ip: ipAddress,
-        userId,
-        createdAt: new Date().toISOString()
-      });
-
-    if (ipError) {
-      console.error('Error tracking IP:', ipError);
-      // We still created the user, so return success
-    }
-  }
-
+  const userId = userData ? (userData as any).id : null;
   return { userId, error: null };
 }
 
@@ -271,4 +126,112 @@ export async function updateUserTokensWithExpiry(
   }
 
   return true;
+}
+
+/**
+ * Get user tokens
+ */
+export async function getUserTokens(userId: string): Promise<number> {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('tokens')
+      .eq('id', userId)
+      .single();
+      
+    if (error) {
+      console.error('Error getting user tokens:', error);
+      return 0;
+    }
+    
+    return data?.tokens || 0;
+  } catch (error) {
+    console.error('Error getting user tokens:', error);
+    return 0;
+  }
+}
+
+/**
+ * Store user conversation context
+ */
+export async function storeConversationContext(userId: string, context: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('users')
+      .update({
+        conversation_context: context,
+        conversation_last_used: new Date().toISOString()
+      })
+      .eq('id', userId);
+      
+    if (error) {
+      console.error('Error storing conversation context:', error);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error storing conversation context:', error);
+    return false;
+  }
+}
+
+/**
+ * Get user conversation context
+ */
+export async function getConversationContext(userId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('conversation_context')
+      .eq('id', userId)
+      .single();
+      
+    if (error) {
+      console.error('Error getting conversation context:', error);
+      return null;
+    }
+    
+    return data?.conversation_context || null;
+  } catch (error) {
+    console.error('Error getting conversation context:', error);
+    return null;
+  }
+}
+
+/**
+ * Increment user generation count
+ */
+export async function incrementUserGenerationCount(userId: string): Promise<boolean> {
+  try {
+    // First get current count
+    const { data, error } = await supabase
+      .from('users')
+      .select('generation_count')
+      .eq('id', userId)
+      .single();
+      
+    if (error) {
+      console.error('Error getting user generation count:', error);
+      return false;
+    }
+    
+    const currentCount = data?.generation_count || 0;
+    
+    // Update with incremented count
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ generation_count: currentCount + 1 })
+      .eq('id', userId);
+      
+    if (updateError) {
+      console.error('Error incrementing generation count:', updateError);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error incrementing generation count:', error);
+    return false;
+  }
 } 

@@ -18,6 +18,7 @@ export async function enhanceImage(imageUrl: string): Promise<string> {
 import OpenAI from 'openai';
 import { encode } from 'gpt-tokenizer'; // For token counting
 import logger from './logger'; // Import the structured logger
+import { ConversationManager, createConversationManager } from './conversation-manager';
 
 // Remove fs and path imports since we're no longer using the file system
 // import fs from 'fs';
@@ -45,6 +46,19 @@ interface CostTracker {
   promptGenerationTokens: number;
   dalleImageGeneration: number;
   totalCostUSD: number;
+}
+
+// Store conversation managers by user ID for persistent conversations
+const userConversations = new Map<string, ConversationManager>();
+
+// Get or create a conversation manager for a specific user
+function getConversationManager(userId: string): ConversationManager {
+  if (!userConversations.has(userId)) {
+    userConversations.set(userId, createConversationManager({
+      systemPrompt: "You are an AI assistant specializing in creating professional product advertisements. You analyze product images and generate marketing materials based on user prompts and brand templates."
+    }));
+  }
+  return userConversations.get(userId)!;
 }
 
 // Load template from JSON file
@@ -287,9 +301,15 @@ export async function processRequest(
   prompt: string,
   templateName?: string,
   referenceAdUrls: string[] = [],
-  isHDQuality: boolean = false // Default to standard quality for cost efficiency
-): Promise<{ adDescription: string; adImageUrl: string; costData: CostTracker }> {
+  isHDQuality: boolean = false, // Default to standard quality for cost efficiency
+  userId?: string // Add userId parameter to maintain conversation context
+): Promise<{ adDescription: string; adImageUrl: string; costData: CostTracker; conversationSummary?: string }> {
   try {
+    // Get or create conversation manager for this user
+    const conversationManager = userId ? 
+      getConversationManager(userId) : 
+      createConversationManager(); // Create temporary one if no userId
+    
     // Initialize cost tracking
     const costData: CostTracker = {
       imageAnalysisTokens: 0,
@@ -298,12 +318,20 @@ export async function processRequest(
       totalCostUSD: 0
     };
     
+    // Add user's prompt to conversation history
+    conversationManager.addUserMessage(`I want to create an advertisement for a product using this image: [Product Image]. My requirements: ${prompt}`);
+    
     // Get brand profile from template
     let brandProfile: any;
     
     if (templateName) {
       // Use pre-defined template
       brandProfile = await loadBrandTemplate(templateName);
+      
+      // Update system prompt with brand template information
+      conversationManager.updateSystemPrompt(
+        `You are an AI assistant specializing in creating professional product advertisements. You analyze product images and generate marketing materials based on user prompts and brand templates. Current brand template: ${JSON.stringify(brandProfile)}`
+      );
     } else if (referenceAdUrls.length > 0) {
       // For now, use default template to save on costs
       brandProfile = await loadBrandTemplate('sportsDrink');
@@ -317,6 +345,9 @@ export async function processRequest(
     const { analysis: productAnalysis, tokenUsage: analysisTokens } = await analyzeProductImage(imageUrl);
     costData.imageAnalysisTokens = analysisTokens;
     
+    // Add analysis result to conversation context
+    conversationManager.addAssistantMessage(`I've analyzed your product image. Here are the key details: ${JSON.stringify(productAnalysis)}`);
+    
     // Calculate cost for image analysis (approximate rates for GPT-4o-mini with vision)
     // $0.015 per 1K input tokens, $0.03 per 1K output tokens, plus image processing cost
     // Add image processing cost (varies by size, using average)
@@ -324,8 +355,30 @@ export async function processRequest(
     
     // Step 2: Create a detailed prompt for DALL-E 3 
     console.log('Creating DALL-E prompt...');
-    const { prompt: dallePrompt, tokenUsage: promptTokens } = await createDALLEPrompt(brandProfile, productAnalysis, prompt);
+    
+    // Use conversation context for generating the DALL-E prompt
+    const messageContext = conversationManager.getMessages();
+    
+    // Add specific instruction for DALL-E prompt creation
+    messageContext.push({
+      role: 'user',
+      content: `Based on our conversation so far, create a detailed DALL-E 3 prompt for a professional advertisement. Focus on layout, colors, product placement, and typography. Consider the product analysis and brand template. Keep the prompt under 900 characters.`
+    });
+    
+    // Use conversation history when generating the DALL-E prompt
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo", 
+      messages: messageContext,
+      temperature: 0.7,
+      max_tokens: 600
+    });
+    
+    const dallePrompt = response.choices[0].message.content || "";
+    const promptTokens = response.usage?.total_tokens || 0;
     costData.promptGenerationTokens = promptTokens;
+    
+    // Add the generated DALL-E prompt to conversation history
+    conversationManager.addAssistantMessage(`I've created a DALL-E prompt for your advertisement: ${dallePrompt}`);
     
     // Calculate cost for prompt generation (GPT-3.5 Turbo)
     // $0.0015 per 1K input tokens, $0.002 per 1K output tokens
@@ -334,6 +387,9 @@ export async function processRequest(
     // Step 3: Generate the ad image using DALL-E 3
     console.log(`Generating advertisement image (${isHDQuality ? 'HD' : 'Standard'} quality)...`);
     const adImageUrl = await generateAdImage(dallePrompt, isHDQuality);
+    
+    // Add the generated image to conversation history
+    conversationManager.addAssistantMessage(`I've generated an advertisement image based on your requirements. [Generated Image]`);
     
     // DALL-E 3 image generation cost
     // Standard quality: $0.04 per image, HD quality: $0.08 per image
@@ -354,7 +410,9 @@ export async function processRequest(
     return {
       adDescription: dallePrompt,
       adImageUrl: adImageUrl,
-      costData: costData
+      costData: costData,
+      // Include conversation summary for context if needed by the client
+      conversationSummary: userId ? undefined : conversationManager.serialize()
     };
   } catch (error) {
     console.error('Error processing request:', error);

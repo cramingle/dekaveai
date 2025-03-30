@@ -19,7 +19,7 @@ interface UploadedImage {
   size?: number; // Image size in bytes
 }
 
-type TokenTier = 'free' | 'basic' | 'pro' | 'enterprise';
+type TokenTier = 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord';
 
 interface TokenUsageInfo {
   tier: TokenTier;
@@ -54,7 +54,7 @@ export default function Home() {
   }>>([]);
   const [maxTokens, setMaxTokens] = useState<number>(10);
   const [tokenInfo, setTokenInfo] = useState<TokenUsageInfo>({
-    tier: 'free',
+    tier: 'Pioneer',
     maxTokens: 3,
     tokenRatio: 1.2,
     promptMultiplier: 1.5,
@@ -176,68 +176,49 @@ export default function Home() {
           return;
         }
         
-        // In production environment, call the API endpoint
-        if (process.env.NODE_ENV === 'production') {
-          try {
-            const imageUrl = uploadedImages[0]?.url;
-            
-            if (!imageUrl) {
-              throw new Error('No image provided');
-            }
-            
-            // Call the generate API endpoint
-            const response = await fetch('/api/generate', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                imageUrl,
-                prompt,
-                userId: user?.id, // Use actual user ID from authenticated session
-                templateName: 'sportsDrink', // Or dynamically choose based on user input
-                isHDQuality
-              }),
-            });
-            
-            if (!response.ok) {
-              const errorData = await response.json();
-              throw new Error(errorData.error || 'Failed to generate ad');
-            }
-            
-            const apiResult = await response.json();
-            setGeneratedAd(apiResult.adImageUrl);
-            setChatHistory(prev => [...prev, {
-              id: `result-${Date.now()}`,
-              type: 'result',
-              content: apiResult.adImageUrl,
-              timestamp: Date.now()
-            }]);
-            setIsGenerating(false);
-            return;
-          } catch (error) {
-            console.error('API generation error:', error);
-            setIsGenerating(false);
-            alert('Failed to generate ad. Please try again.');
-            return;
+        try {
+          const imageUrl = uploadedImages[0]?.url;
+          
+          if (!imageUrl) {
+            throw new Error('No image provided');
           }
-        }
-        
-        // For development mode, use simulation
-        const generationTime = 1500 + (tokenCost * 500);
-        
-        setTimeout(() => {
-          // In development, we simulate the generation
-          const result = 'https://placekitten.com/800/600'; // Placeholder
-          setGeneratedAd(result);
+          
+          // Call the generate API endpoint
+          const response = await fetch('/api/generate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              imageUrl,
+              prompt,
+              userId: user?.id, // Use actual user ID from authenticated session
+              templateName: 'sportsDrink', // Or dynamically choose based on user input
+              isHDQuality
+            }),
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to generate ad');
+          }
+          
+          const apiResult = await response.json();
+          setGeneratedAd(apiResult.adImageUrl);
           setChatHistory(prev => [...prev, {
             id: `result-${Date.now()}`,
             type: 'result',
-            content: result,
+            content: apiResult.adImageUrl,
             timestamp: Date.now()
           }]);
           setIsGenerating(false);
-        }, generationTime);
+          return;
+        } catch (error) {
+          console.error('API generation error:', error);
+          setIsGenerating(false);
+          alert('Failed to generate ad. Please try again.');
+          return;
+        }
       } catch (error) {
         console.error('Error subtracting tokens:', error);
         setIsGenerating(false);
@@ -252,34 +233,56 @@ export default function Home() {
     }
   };
   
-  const simulateSuccessfulPayment = async (isFree = false) => {
+  const simulateSuccessfulPayment = async () => {
     // Hide paywall
     setShowPaywall(false);
     setIsProcessingPayment(false);
     
-    // Show loading again for dramatic effect
+    // Show loading spinner
     setIsGenerating(true);
     
-    // For development, trigger the auth:success event to handle result generation
-    if (process.env.NODE_ENV === 'development') {
-      window.dispatchEvent(new CustomEvent('auth:success', { 
-        detail: { isPaid: !isFree }
-      }));
-      return;
-    }
-    
-    // Generate result after payment
-    setTimeout(() => {
-      const result = 'https://placekitten.com/800/600'; // Placeholder
-      setGeneratedAd(result);
+    // Call the API to generate the result
+    try {
+      // Get the latest prompt from chat history
+      const lastPrompt = chatHistory.filter(item => item.type === 'prompt').pop();
+      
+      if (!lastPrompt || !uploadedImages[0]?.url) {
+        throw new Error('Missing prompt or image');
+      }
+      
+      // Call the generate API endpoint
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageUrl: uploadedImages[0].url,
+          prompt: lastPrompt.content,
+          templateName: 'sportsDrink',
+          isHDQuality
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate ad');
+      }
+      
+      const apiResult = await response.json();
+      setGeneratedAd(apiResult.adImageUrl);
       setChatHistory(prev => [...prev, {
         id: `result-${Date.now()}`,
         type: 'result',
-        content: result,
+        content: apiResult.adImageUrl,
         timestamp: Date.now()
       }]);
+    } catch (error) {
+      console.error('Error generating result:', error);
+      alert('Failed to generate result. Please try again.');
+    } finally {
       setIsGenerating(false);
-    }, 2000);
+    }
   };
   
   const handleTokenPurchase = async (packageId: string) => {
@@ -325,50 +328,6 @@ export default function Home() {
   const startNewChat = () => {
     window.location.reload();
   };
-
-  // Listen for auth success events from Paywall component
-  useEffect(() => {
-    const handleAuthSuccess = (event: CustomEvent<{isPaid: boolean}>) => {
-      console.log('Auth success event received', event.detail);
-      
-      // Close paywall
-      setShowPaywall(false);
-      setIsProcessingPayment(false);
-      
-      // Show loading spinner
-      setIsGenerating(true);
-      
-      // Generate a result
-      setTimeout(() => {
-        // Check if we have chat history to determine what prompt to respond to
-        if (chatHistory.length > 0) {
-          const lastPrompt = chatHistory.filter(item => item.type === 'prompt').pop();
-          if (lastPrompt) {
-            // Generate result for the last prompt
-            const result = 'https://placekitten.com/800/600'; // Placeholder
-            setGeneratedAd(result);
-            setChatHistory(prev => [...prev, {
-              id: `result-${Date.now()}`,
-              type: 'result',
-              content: result,
-              timestamp: Date.now()
-            }]);
-          }
-        }
-        
-        // Hide loading spinner
-        setIsGenerating(false);
-      }, 2000);
-    };
-    
-    // Add event listener
-    window.addEventListener('auth:success', handleAuthSuccess as EventListener);
-    
-    // Clean up
-    return () => {
-      window.removeEventListener('auth:success', handleAuthSuccess as EventListener);
-    };
-  }, [chatHistory]);
 
   const toggleHDQuality = () => {
     const newQuality = !isHDQuality;

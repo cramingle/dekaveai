@@ -1,155 +1,151 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processRequest } from '@/lib/ai-processing';
-import { getUserData, updateUserTokens } from '@/lib/supabase';
+import { getServerSession } from 'next-auth';
+import { authOptions, getUserConversation, saveUserConversation } from '@/lib/auth';
+import { updateUserTokens, getUserTokens } from '@/lib/supabase';
 import logger from '@/lib/logger';
 import { trackAdGeneration, trackAdGenerationError } from '@/lib/analytics';
 
-// Simple in-memory rate limiting 
-// Note: For production with multiple servers, use Redis or a similar distributed solution
-const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute in milliseconds
-const MAX_REQUESTS_PER_WINDOW = 5; // Maximum 5 requests per minute per IP
+// Rate limiting setup
+const rateLimit = 10; // Max requests per minute
+const rateLimitWindow = 60 * 1000; // 1 minute
+const ipRequests = new Map<string, number[]>();
 
-// Store rate limiting data
-const rateLimitTracker: Record<string, { count: number, resetTime: number }> = {};
-
-// Clean up the rate limit tracker periodically
+// Clean up expired rate limit entries
 setInterval(() => {
   const now = Date.now();
-  // Remove expired entries
-  Object.keys(rateLimitTracker).forEach(key => {
-    if (rateLimitTracker[key].resetTime < now) {
-      delete rateLimitTracker[key];
+  for (const [ip, timestamps] of ipRequests.entries()) {
+    const validTimestamps = timestamps.filter(time => now - time < rateLimitWindow);
+    if (validTimestamps.length === 0) {
+      ipRequests.delete(ip);
+    } else {
+      ipRequests.set(ip, validTimestamps);
     }
-  });
+  }
 }, 5 * 60 * 1000); // Clean up every 5 minutes
 
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
+    // Get the current user
+    const session = await getServerSession(authOptions);
+    
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    
+    const userId = session.user.id;
+    
+    // Parse request body
+    const { imageUrl, prompt, templateName, isHDQuality, resetConversation } = await req.json();
+    
+    // Validate required parameters
+    if (!imageUrl) {
+      return NextResponse.json({ error: 'Image URL is required' }, { status: 400 });
+    }
+    
+    if (!prompt) {
+      return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
+    }
+    
     // Apply rate limiting
-    const ip = request.headers.get('x-forwarded-for') || 'unknown';
+    const ip = req.headers.get('x-forwarded-for') || 'unknown';
     
     // Initialize rate limit data for this IP if it doesn't exist
-    if (!rateLimitTracker[ip]) {
-      rateLimitTracker[ip] = {
-        count: 0,
-        resetTime: Date.now() + RATE_LIMIT_WINDOW
-      };
+    if (!ipRequests.has(ip)) {
+      ipRequests.set(ip, []);
     }
     
-    // Reset count if the window has passed
-    if (Date.now() > rateLimitTracker[ip].resetTime) {
-      rateLimitTracker[ip] = {
-        count: 0,
-        resetTime: Date.now() + RATE_LIMIT_WINDOW
-      };
-    }
+    // Get current requests for this IP
+    const requests = ipRequests.get(ip)!;
     
-    // Increment request count
-    rateLimitTracker[ip].count++;
+    // Remove timestamps outside the window
+    const now = Date.now();
+    const recentRequests = requests.filter(time => now - time < rateLimitWindow);
     
-    // Check if rate limit is exceeded
-    if (rateLimitTracker[ip].count > MAX_REQUESTS_PER_WINDOW) {
+    // Check if rate limit exceeded
+    if (recentRequests.length >= rateLimit) {
       return NextResponse.json(
-        {
-          error: 'Rate limit exceeded',
-          retryAfter: Math.ceil((rateLimitTracker[ip].resetTime - Date.now()) / 1000)
-        },
-        {
-          status: 429,
-          headers: {
-            'Retry-After': Math.ceil((rateLimitTracker[ip].resetTime - Date.now()) / 1000).toString()
-          }
-        }
+        { error: 'Rate limit exceeded. Please try again later.' },
+        { status: 429 }
       );
     }
     
-    const { imageUrl, prompt, userId, templateName, isHDQuality } = await request.json();
-
-    // Validate input
-    if (!imageUrl || !prompt || !userId) {
-      return NextResponse.json(
-        { error: 'Missing required fields: imageUrl, prompt, or userId' },
-        { status: 400 }
-      );
-    }
-
-    // Get user data
-    const userData = await getUserData(userId);
-    if (!userData) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
-    }
-
-    // Check if tokens are expired
-    if (userData.tokens_expiry_date) {
-      const expiryDate = new Date(userData.tokens_expiry_date);
-      if (expiryDate < new Date()) {
-        return NextResponse.json(
-          { error: 'Tokens have expired', tokensExpired: true, expiryDate: userData.tokens_expiry_date },
-          { status: 403 }
-        );
-      }
-    }
-
+    // Add current request timestamp
+    recentRequests.push(now);
+    ipRequests.set(ip, recentRequests);
+    
+    // Get user's current token count
+    const currentTokens = await getUserTokens(userId);
+    
     // Calculate token cost based on quality
     const tokenCost = isHDQuality ? 20000 : 10000;
-
+    
     // Check if user has enough tokens
-    if (userData.tokens < tokenCost) {
+    if (currentTokens < tokenCost) {
       return NextResponse.json(
-        { error: 'Not enough tokens', tokensNeeded: tokenCost, tokensAvailable: userData.tokens },
+        { error: 'Not enough tokens', tokensNeeded: tokenCost, tokensAvailable: currentTokens },
         { status: 403 }
       );
     }
-
-    // Process the request with proper error handling
-    try {
-      // Call AI processing with quality option
-      const result = await processRequest(
-        imageUrl, 
-        prompt, 
-        templateName || 'sportsDrink', // Use default template if none provided
-        [], // Reference URLs not implemented yet
-        isHDQuality || false // Default to standard quality if not specified
-      );
-
-      // Track successful generation for analytics
-      trackAdGeneration(userId, Boolean(isHDQuality), result.costData);
-
-      // Decrement tokens based on quality
-      const newTokenCount = userData.tokens - tokenCost;
-      await updateUserTokens(userId, newTokenCount);
-
-      // Return the result with cost data for transparency
-      return NextResponse.json({
-        adDescription: result.adDescription,
-        adImageUrl: result.adImageUrl,
-        costData: result.costData,
-        tokensLeft: newTokenCount,
-        tokensUsed: tokenCost
-      });
-    } catch (error: any) {
-      logger.error('Error in AI processing:', error);
-      
-      // Track generation error for analytics
-      trackAdGenerationError(userId, error.message || 'Unknown error');
-      
-      // Return specific error for better debugging
-      return NextResponse.json(
-        { 
-          error: 'AI processing failed', 
-          message: error.message || 'Unknown error',
-          tokensLeft: userData.tokens // No tokens were used
-        },
-        { status: 500 }
-      );
+    
+    // Load previous conversation context if requested
+    let conversationContext = null;
+    if (!resetConversation) {
+      conversationContext = await getUserConversation(userId);
     }
+    
+    // Process the request with user ID to maintain conversation context
+    const result = await processRequest(
+      imageUrl,
+      prompt,
+      templateName || 'sportsDrink', // Default template if none provided
+      [], // No reference URLs for now
+      isHDQuality || false,
+      userId // Pass userId to maintain conversation context
+    );
+    
+    // Save the updated conversation context
+    if (result.conversationSummary) {
+      await saveUserConversation(userId, result.conversationSummary);
+    }
+    
+    // Track successful generation for analytics
+    trackAdGeneration(userId, Boolean(isHDQuality), result.costData);
+    
+    // Update user tokens after successful generation
+    const newTokenCount = currentTokens - tokenCost;
+    await updateUserTokens(userId, newTokenCount);
+    
+    // Return the generated ad
+    return NextResponse.json({
+      adDescription: result.adDescription,
+      adImageUrl: result.adImageUrl,
+      tokenUsage: {
+        imageAnalysis: result.costData.imageAnalysisTokens,
+        promptGeneration: result.costData.promptGenerationTokens,
+        totalCost: result.costData.totalCostUSD
+      },
+      tokensLeft: newTokenCount,
+      tokensUsed: tokenCost,
+      hasConversationContext: !!result.conversationSummary
+    });
+    
   } catch (error) {
-    console.error('Error processing request:', error);
+    // Log the error
+    logger.error('Error generating ad:', error);
+    
+    // Get user ID from error if available
+    const errorObj = error as any;
+    const userId = errorObj?.userId || errorObj?.user?.id;
+    
+    if (userId) {
+      // Track generation error for analytics
+      trackAdGenerationError(userId, error instanceof Error ? error.message : 'An error occurred');
+    }
+    
+    // Return error response
     return NextResponse.json(
-      { error: 'Failed to process request' },
+      { error: error instanceof Error ? error.message : 'An error occurred' },
       { status: 500 }
     );
   }

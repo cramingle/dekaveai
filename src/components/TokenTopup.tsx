@@ -6,7 +6,7 @@ type TokenPackage = {
   tokens: number;
   price: number;
   discount: number;
-  tier: string;
+  tier: 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord';
 };
 
 type TokenTopupProps = {

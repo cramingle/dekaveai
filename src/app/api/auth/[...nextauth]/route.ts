@@ -13,7 +13,7 @@ declare module 'next-auth' {
       id?: string;
       tokens?: number;
       tokens_expiry_date?: string;
-      tier?: 'free' | 'basic' | 'pro' | 'enterprise';
+      tier?: 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord';
     }
   }
 }
@@ -55,12 +55,12 @@ const handler = NextAuth({
         // Add token info to session
         session.user.tokens = userData.tokens || 0;
         session.user.tokens_expiry_date = userData.tokens_expiry_date;
-        session.user.tier = userData.tier || 'free';
+        session.user.tier = userData.tier || 'Pioneer';
         session.user.id = user.id;
       } else {
         // If first login, or token info not found, create default token info
-        const tier = 'free';
-        const tokens = 100000; // Default token count for free tier
+        const tier = 'Pioneer';
+        const tokens = 0; // No default tokens - users must purchase
         
         // Calculate expiration date (28 days from now)
         const expiryDate = new Date();
@@ -82,17 +82,6 @@ const handler = NextAuth({
         session.user.tokens_expiry_date = expiryDate.toISOString();
         session.user.tier = tier;
         session.user.id = user.id;
-        
-        // Also track IP for free tier users (for anti-abuse)
-        if (tier === 'free') {
-          await supabase
-            .from('ip_tracking')
-            .insert({
-              ip: 'unknown', // We'll update this client-side when possible
-              user_id: user.id,
-              created_at: new Date().toISOString(),
-            });
-        }
       }
       
       return session;

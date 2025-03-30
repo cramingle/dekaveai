@@ -18,23 +18,19 @@ All API endpoints implement rate limiting to prevent abuse:
 Supabase Row Level Security policies are implemented to ensure users can only access their own data:
 
 1. **Users Table**: Users can only read and update their own non-critical data
-2. **IP Tracking Table**: Only accessible via service role
-3. **Generation Records**: Users can only access their own generation records
+2. **Generation Records**: Users can only access their own generation records
 
 ### Database Rate Limiting
 
 Database triggers implement rate limiting at the database level:
 
-1. **Generation Records**: Tiered rate limits enforced by database triggers
-   - Free tier: 3 records per minute
-   - Basic tier: 5 records per minute
-   - Pro tier: 10 records per minute
+1. **Generation Records**: Rate limits enforced by database triggers
+   - Standard rate limit: 10 records per minute for all users
 
 ## Authentication
 
 1. **Google OAuth**: Secure authentication using Google OAuth 2.0
 2. **Supabase Auth**: NextAuth integration with Supabase adapter
-3. **IP Tracking**: Prevents multiple free accounts from the same IP address
 
 ## Payment Security
 

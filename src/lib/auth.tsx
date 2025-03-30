@@ -9,6 +9,112 @@ import {
 } from 'react';
 import { signIn, signOut, useSession } from 'next-auth/react';
 import { supabase } from './supabase';
+import { getConversationContext, storeConversationContext } from './supabase';
+import type { NextAuthOptions } from 'next-auth';
+import GoogleProvider from 'next-auth/providers/google';
+import type { DefaultSession } from 'next-auth';
+
+// Add interface for extended user
+interface ExtendedUser {
+  id?: string;
+  tokens?: number;
+  tier?: 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord';
+  tokens_expiry_date?: string;
+  hasStoredConversation?: boolean;
+  conversationLastUsed?: string;
+  [key: string]: any; // For other properties
+}
+
+// Define NextAuth configuration
+export const authOptions: NextAuthOptions = {
+  providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      authorization: {
+        params: {
+          prompt: "consent",
+          access_type: "offline",
+          response_type: "code"
+        }
+      }
+    }),
+  ],
+  session: {
+    strategy: "jwt",
+  },
+  callbacks: {
+    async session({ session, token }) {
+      // Add user ID from token to session
+      if (token.sub && session.user) {
+        session.user.id = token.sub;
+      }
+      
+      // Populate the session with user data from Supabase
+      if (session.user?.id) {
+        try {
+          const { data: userData } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          
+          if (userData) {
+            // Use type assertion to avoid TypeScript errors
+            const extendedUser = session.user as ExtendedUser;
+            extendedUser.tokens = userData.tokens || 0;
+            extendedUser.tier = userData.tier || 'Pioneer';
+            extendedUser.tokens_expiry_date = userData.tokens_expiry_date;
+            
+            // Add conversation context info
+            if (userData.conversation_last_used) {
+              extendedUser.hasStoredConversation = true;
+              extendedUser.conversationLastUsed = userData.conversation_last_used;
+            } else {
+              extendedUser.hasStoredConversation = false;
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching user data:', error);
+        }
+      }
+      
+      return session;
+    },
+    async jwt({ token, user, account }) {
+      // If new sign in, save user to Supabase
+      if (account && user) {
+        try {
+          const { data, error } = await supabase
+            .from('users')
+            .upsert({
+              id: user.id,
+              email: user.email,
+              provider: account.provider,
+              created_at: new Date().toISOString(),
+              tokens: 0, // No default tokens - users must purchase
+              tier: 'Pioneer'
+            }, {
+              onConflict: 'id',
+              ignoreDuplicates: false,
+            });
+          
+          if (error) {
+            console.error('Error saving user to Supabase:', error);
+          }
+        } catch (error) {
+          console.error('Error in sign in flow:', error);
+        }
+      }
+      return token;
+    }
+  },
+  pages: {
+    signIn: '/login',
+    error: '/login',
+  },
+  secret: process.env.NEXTAUTH_SECRET,
+};
 
 // Define the auth context types
 type UserAuth = {
@@ -16,7 +122,7 @@ type UserAuth = {
   user: any | null;
   tokens: number;
   tokensExpiryDate?: string;
-  tier: string; // Simplified - tier is just a descriptive string, not functional
+  tier: 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord'; // Specific tier values
   isLoading: boolean;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
@@ -47,27 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setTokensExpiryDate(session.user.tokens_expiry_date);
       setTier(session.user.tier || 'Pioneer');
     } else {
-      // Check for mock auth in development mode
-      if (process.env.NODE_ENV === 'development') {
-        const mockAuth = localStorage.getItem('mockAuth');
-        const mockUserStr = localStorage.getItem('mockUser');
-        
-        if (mockAuth === 'true' && mockUserStr) {
-          try {
-            const mockUser = JSON.parse(mockUserStr);
-            setIsAuthenticated(true);
-            setUser(mockUser);
-            setTokens(mockUser.tokens || 100000);
-            setTokensExpiryDate(mockUser.tokens_expiry_date);
-            setTier(mockUser.tier || 'Pioneer');
-            return; // Skip the reset below
-          } catch (e) {
-            console.error('Error parsing mock user from localStorage', e);
-          }
-        }
-      }
-      
-      // Reset auth state if no session and no mock auth
+      // Reset auth state if no session
       setIsAuthenticated(false);
       setUser(null);
       setTokens(0);
@@ -78,98 +164,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Function to sign in with Google
   const signInWithGoogle = async () => {
-    // Mock authentication for development without proper OAuth setup
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Development mode: Simulating Google sign-in');
-      
-      // Create expiry date (28 days from now)
-      const expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + 28);
-      
-      // Create a mock user
-      const mockUser = {
-        id: 'dev-user-123',
-        name: 'Dev User',
-        email: 'dev@example.com',
-        image: null,
-        tokens: 100000, // Default 100k tokens
-        tokens_expiry_date: expiryDate.toISOString(),
-        tier: 'Pioneer'
-      };
-      
-      // Update state
-      setIsAuthenticated(true);
-      setUser(mockUser);
-      setTokens(mockUser.tokens);
-      setTokensExpiryDate(mockUser.tokens_expiry_date);
-      setTier(mockUser.tier);
-      
-      // Also store in localStorage for persistence
-      localStorage.setItem('mockUser', JSON.stringify(mockUser));
-      localStorage.setItem('mockAuth', 'true');
-      
-      return;
-    }
-    
     await signIn('google', { callbackUrl: '/' });
   };
 
   // Function to log out
   const logout = async () => {
-    // Handle mock logout in development
-    if (process.env.NODE_ENV === 'development') {
-      localStorage.removeItem('mockAuth');
-      localStorage.removeItem('mockUser');
-      
-      // Reset state
-      setIsAuthenticated(false);
-      setUser(null);
-      setTokens(0);
-      setTokensExpiryDate(undefined);
-      setTier('Pioneer');
-      
-      // Reload page to refresh UI
-      window.location.href = '/';
-      return;
-    }
-    
     await signOut({ callbackUrl: '/' });
   };
 
   // Function to refresh token count
   const refreshTokenCount = async () => {
-    // Mock refresh token in development mode
-    if (process.env.NODE_ENV === 'development' && !session?.user?.id) {
-      console.log('Development mode: Simulating token refresh');
-      
-      // Try to get tokens from localStorage
-      try {
-        const mockUserStr = localStorage.getItem('mockUser');
-        if (mockUserStr) {
-          const mockUser = JSON.parse(mockUserStr);
-          console.log('Retrieved tokens from localStorage:', mockUser.tokens);
-          setTokens(mockUser.tokens || 0);
-          setTokensExpiryDate(mockUser.tokens_expiry_date);
-          setTier(mockUser.tier || 'Pioneer');
-          return;
-        }
-      } catch (e) {
-        console.error('Error getting token count from localStorage', e);
-      }
-      
-      // Fallback - set default values
-      const newTokens = 0; // Default no tokens
-      setTokens(newTokens);
-      
-      return;
-    }
-    
     if (!session?.user?.id) return;
     
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('tokens, tier')
+        .select('tokens, tier, tokens_expiry_date')
         .eq('id', session.user.id)
         .single();
       
@@ -185,99 +195,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Function to buy tokens
   const buyTokens = async (packageId: string) => {
-    // Handle development mode
-    if (process.env.NODE_ENV === 'development' && (!session?.user?.id || packageId.startsWith('subtract-'))) {
-      console.log('Development mode: Simulating token purchase/subtraction');
-      
-      // Parse token subtraction command
-      if (packageId.startsWith('subtract-')) {
-        const amount = parseInt(packageId.replace('subtract-', '')) || 10000;
-        console.log(`Subtracting ${amount} tokens from current ${tokens}. New count: ${Math.max(0, tokens - amount)}`);
-        
-        // Update the state immediately
-        const newTokenCount = Math.max(0, tokens - amount);
-        setTokens(newTokenCount);
-        
-        // Also update in localStorage for persistence
-        if (localStorage.getItem('mockAuth') === 'true') {
-          try {
-            const mockUserStr = localStorage.getItem('mockUser');
-            if (mockUserStr) {
-              const mockUser = JSON.parse(mockUserStr);
-              mockUser.tokens = newTokenCount;
-              localStorage.setItem('mockUser', JSON.stringify(mockUser));
-              console.log('Updated mockUser in localStorage:', mockUser);
-            }
-          } catch (e) {
-            console.error('Error updating mock user in localStorage', e);
-          }
-        }
-        
-        return { success: true };
-      }
-      
-      // Token package definitions
-      const tokenPackages = [
-        { id: 'basic', tokens: 100000, tier: 'Pioneer' },
-        { id: 'value', tokens: 250000, tier: 'Voyager' },
-        { id: 'pro', tokens: 600000, tier: 'Dominator' },
-        { id: 'max', tokens: 1000000, tier: 'Overlord' },
-      ];
-      
-      const selectedPackage = tokenPackages.find(pkg => pkg.id === packageId);
-      
-      if (selectedPackage) {
-        // Create expiry date (28 days from now)
-        const expiryDate = new Date();
-        expiryDate.setDate(expiryDate.getDate() + 28);
-        
-        setTokens(tokens + selectedPackage.tokens);
-        setTokensExpiryDate(expiryDate.toISOString());
-        setTier(selectedPackage.tier);
-        
-        // Update mockUser in localStorage
-        if (localStorage.getItem('mockAuth') === 'true') {
-          try {
-            const mockUserStr = localStorage.getItem('mockUser');
-            if (mockUserStr) {
-              const mockUser = JSON.parse(mockUserStr);
-              mockUser.tokens = tokens + selectedPackage.tokens;
-              mockUser.tokens_expiry_date = expiryDate.toISOString();
-              mockUser.tier = selectedPackage.tier;
-              localStorage.setItem('mockUser', JSON.stringify(mockUser));
-            }
-          } catch (e) {
-            console.error('Error updating mock user in localStorage', e);
-          }
-        }
-        
-        return { success: true };
-      }
-      
-      // Default behavior - add 100,000 tokens
-      const expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + 28);
-      setTokens(tokens + 100000);
-      setTokensExpiryDate(expiryDate.toISOString());
-      
-      // Update mockUser in localStorage
-      if (localStorage.getItem('mockAuth') === 'true') {
-        try {
-          const mockUserStr = localStorage.getItem('mockUser');
-          if (mockUserStr) {
-            const mockUser = JSON.parse(mockUserStr);
-            mockUser.tokens = tokens + 100000;
-            mockUser.tokens_expiry_date = expiryDate.toISOString();
-            localStorage.setItem('mockUser', JSON.stringify(mockUser));
-          }
-        } catch (e) {
-          console.error('Error updating mock user in localStorage', e);
-        }
-      }
-      
-      return { success: true };
-    }
-    
     if (!session?.user?.id) {
       return { success: false, error: 'Not authenticated' };
     }
@@ -354,7 +271,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     tokens,
     tokensExpiryDate,
-    tier,
+    tier: (tier as 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord'),
     isLoading,
     signInWithGoogle,
     logout,
@@ -378,4 +295,23 @@ export const useAuth = () => {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-}; 
+};
+
+// Export these functions for use in the conversation context management
+export async function getUserConversation(userId: string) {
+  try {
+    return await getConversationContext(userId);
+  } catch (error) {
+    console.error('Error getting user conversation:', error);
+    return null;
+  }
+}
+
+export async function saveUserConversation(userId: string, contextData: string) {
+  try {
+    return await storeConversationContext(userId, contextData);
+  } catch (error) {
+    console.error('Error saving user conversation:', error);
+    return false;
+  }
+} 

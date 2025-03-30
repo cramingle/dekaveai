@@ -4,18 +4,6 @@ import logger from '@/lib/logger';
 // In a real production app, this would typically write to a database
 // or send events to an external analytics service like Datadog, NewRelic, etc.
 
-// Simple in-memory cache for recent events (for development purposes)
-// This will be cleared on server restart
-const recentEvents: Array<{
-  event: string;
-  data: any;
-  timestamp: string;
-  ip?: string;
-}> = [];
-
-// Maximum events to keep in memory
-const MAX_EVENTS = 1000;
-
 export async function POST(request: NextRequest) {
   try {
     // Get the IP address for analytics
@@ -31,7 +19,7 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Store the event (in production this would go to a database or analytics service)
+    // Prepare the event data
     const eventData = {
       event,
       data,
@@ -42,20 +30,8 @@ export async function POST(request: NextRequest) {
     // Log the event
     logger.info(`Tracking event: ${event}`, eventData);
     
-    // Store in memory for development
-    if (process.env.NODE_ENV === 'development') {
-      recentEvents.unshift(eventData);
-      
-      // Keep the list at a manageable size
-      if (recentEvents.length > MAX_EVENTS) {
-        recentEvents.length = MAX_EVENTS;
-      }
-    }
-    
-    // In production, this would call an external analytics service
-    if (process.env.NODE_ENV === 'production') {
-      // Example: await sendToAnalyticsService(eventData);
-    }
+    // This would call an external analytics service
+    // Example: await sendToAnalyticsService(eventData);
     
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -65,17 +41,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-// Endpoint to get recent events for debugging (development only)
-export async function GET(request: NextRequest) {
-  // Only allow in development mode
-  if (process.env.NODE_ENV !== 'development') {
-    return NextResponse.json(
-      { error: 'This endpoint is only available in development mode' },
-      { status: 403 }
-    );
-  }
-  
-  return NextResponse.json({ events: recentEvents });
 } 
