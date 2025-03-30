@@ -9,11 +9,11 @@ import { transactions } from '@/lib/db/schema';
 
 // DANA API base URL
 const DANA_API_BASE_URL = DANA_ENVIRONMENT === 'production'
-  ? 'https://api.dana.id'
+  ? 'https://api.saas.dana.id'
   : 'https://api.sandbox.dana.id';
 
-// DANA payment endpoint for QRIS MPM (Acquirer)
-const DANA_PAYMENT_ENDPOINT = '/qr/api/merchant/acquirer/v1/orders/qrcode';
+// Use the correct QRIS generation endpoint from documentation
+const DANA_PAYMENT_ENDPOINT = '/v1.0/qr/qr-mpm-generate.htm';
 
 // Simple in-memory rate limiting for payment endpoint
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
@@ -135,30 +135,42 @@ export async function POST(request: NextRequest) {
       
       // Create request payload based on QRIS MPM (Acquirer) Generate QRIS API
       const payload = {
-        request: {
-          merchantId: DANA_MERCHANT_ID,
-          merchantOrderNo: merchantOrderNo,
-          orderTitle: description,
-          orderDesc: `Token purchase for user ${email}`,
-          orderAmount: {
-            currency: "IDR",
-            value: amount.toFixed(2)
-          },
-          merchantRedirectUrl: getUrl('/api/webhooks/dana/redirect'),
-          merchantCallbackUrl: getUrl('/api/webhooks/dana/payment'),
-          expireTime: 15, // QR code expires in 15 minutes
-          notifyUrl: getUrl('/api/webhooks/dana/notify'),
-          paymentChannels: ["QRIS"],
-          orderTerminalType: "WEB",
-          productCode: packageId,
-          productQuantity: 1,
-          merchantTransInfo: {
-            merchantTransType: "ONLINE_PURCHASE",
-            merchantUserId: userId,
-            userInfo: {
-              userId: userId,
-              userEmail: email
-            }
+        merchantId: DANA_MERCHANT_ID,
+        subMerchantId: "", // Optional
+        storeId: "DEKAVE", // Unique identifier for our store
+        terminalId: "", // Optional
+        partnerReferenceNo: merchantOrderNo,
+        amount: {
+          value: amount.toFixed(2),
+          currency: "IDR"
+        },
+        // Optional fee if needed
+        // feeAmount: {
+        //   value: "0.00",
+        //   currency: "IDR"
+        // },
+        // Optional validity period
+        // validityPeriod: new Date(Date.now() + 15*60*1000).toISOString().replace('Z', '+07:00'),
+        additionalInfo: {
+          terminalSource: "MER",
+          envInfo: {
+            sessionId: merchantOrderNo,
+            tokenId: crypto.randomUUID(),
+            websiteLanguage: "en_US",
+            clientIp: request.headers.get('x-forwarded-for') || "unknown",
+            osType: "Web.PC",
+            appVersion: "1.0",
+            sdkVersion: "1.0",
+            sourcePlatform: "IPG",
+            terminalType: "SYSTEM",
+            orderTerminalType: "WEB",
+            orderOsType: "WEB",
+            merchantAppVersion: "1.0",
+            extendInfo: JSON.stringify({
+              deviceId: request.headers.get('user-agent') || "unknown",
+              bizScenario: "DEKAVE_TOKEN_PURCHASE",
+              productDetails: description
+            })
           }
         }
       };
@@ -173,7 +185,7 @@ export async function POST(request: NextRequest) {
       // Log the API request for debugging
       logger.info('Making Dana payment request', {
         url: `${DANA_API_BASE_URL}${DANA_PAYMENT_ENDPOINT}`,
-        merchantOrderNo,
+        merchantOrderNo: payload.partnerReferenceNo,
         merchantId: DANA_MERCHANT_ID,
         amount: amount.toFixed(2),
         payload: JSON.stringify(payload)
@@ -185,12 +197,11 @@ export async function POST(request: NextRequest) {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-          'Authorization': `Bearer ${DANA_API_KEY}`, // Authorization with bearer token
           'X-TIMESTAMP': danaTimestamp,
           'X-SIGNATURE': signature,
           'ORIGIN': getUrl('/'),
           'X-PARTNER-ID': DANA_MERCHANT_ID,
-          'X-EXTERNAL-ID': merchantOrderNo,
+          'X-EXTERNAL-ID': crypto.randomUUID(),
           'CHANNEL-ID': '00001' // Web channel ID
         },
         body: JSON.stringify(payload)
@@ -217,10 +228,10 @@ export async function POST(request: NextRequest) {
         if (response.ok) {
           const data = await response.json();
           
-          // Check if the response is successful
-          if (data.response && data.response.qrCode) {
+          // Check if the response is successful based on DANA documentation
+          if (data.success && data.qrCode) {
             // The QRIS qrCode is the string representation of the QR Code
-            const qrCode = data.response.qrCode;
+            const qrCode = data.qrCode;
             
             // Update the successful transaction in database
             await db.insert(transactions).values({
@@ -232,17 +243,19 @@ export async function POST(request: NextRequest) {
               provider: "DANA",
               description,
               metadata: {
-                merchantOrderNo,
+                merchantOrderNo: payload.partnerReferenceNo,
                 qrCode,
                 orderAmount: amount,
-                currency: "IDR"
+                currency: "IDR",
+                referenceId: data.referenceId || "",
+                orderId: data.orderId || ""
               },
               createdAt: new Date()
             });
             
             // Log success
             logger.info('Dana payment created successfully', {
-              orderId: merchantOrderNo,
+              orderId: payload.partnerReferenceNo,
               packageId,
               userId,
               qrCode: qrCode.substring(0, 20) + '...' // Log only part of QR code for security
@@ -261,16 +274,16 @@ export async function POST(request: NextRequest) {
             // Return successful response with QR code
             return NextResponse.json({
               success: true,
-              orderId: merchantOrderNo,
+              orderId: payload.partnerReferenceNo,
               qrCode: qrCode,
-              expireTime: 15 // minutes
+              expireTime: data.expireTime || 15 // minutes
             });
           } else {
             // Handle API error response
             logger.error('Dana payment failed - API returned error', {
-              error: data.response?.errorMessage || 'Unknown error',
-              code: data.response?.errorCode || 'UNKNOWN',
-              merchantOrderNo
+              error: data.responseMessage || data.errorMessage || 'Unknown error',
+              code: data.responseCode || data.errorCode || 'UNKNOWN',
+              partnerReferenceNo: payload.partnerReferenceNo
             });
             
             // Track failure
@@ -280,7 +293,7 @@ export async function POST(request: NextRequest) {
               packageId,
               provider: 'dana',
               status: 'qr_generation_failed',
-              error: data.response?.errorMessage || 'Unknown error',
+              error: data.responseMessage || data.errorMessage || 'Unknown error',
               timestamp: new Date().toISOString()
             });
 
@@ -288,8 +301,8 @@ export async function POST(request: NextRequest) {
               { 
                 success: false, 
                 message: 'Payment initiation failed',
-                errorCode: data.response?.errorCode || 'UNKNOWN',
-                errorMessage: data.response?.errorMessage || 'Unknown error from payment provider'
+                errorCode: data.responseCode || data.errorCode || 'UNKNOWN',
+                errorMessage: data.responseMessage || data.errorMessage || 'Unknown error from payment provider'
               },
               { status: 400 }
             );
