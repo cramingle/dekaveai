@@ -187,33 +187,52 @@ export async function POST(request: NextRequest) {
       
       // Generate signature using DANA's signature format
       const signatureBase = JSON.stringify(payload);
+      logger.info('Generating signature with base', { 
+        signatureBase: signatureBase.substring(0, 50) + '...',
+        secretLength: DANA_API_SECRET.length
+      });
       const signature = crypto
         .createHmac('sha256', DANA_API_SECRET)
         .update(signatureBase)
-        .digest('hex');
+        .digest('hex')
+        .toLowerCase(); // Ensure lowercase to match sample
+      
+      logger.info('Generated signature', { signature });
         
+      // Generate a channel ID based on user agent or device information
+      // We'll extract first 5 chars of a hash of the user agent to stay within the 5 character limit
+      const userAgent = request.headers.get('user-agent') || 'unknown';
+      const channelIdHash = crypto
+        .createHash('md5')
+        .update(userAgent)
+        .digest('hex')
+        .substring(0, 5)
+        .toUpperCase();
+      
       // Log the API request for debugging
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-TIMESTAMP': danaTimestamp,
+        'X-SIGNATURE': signature,
+        'ORIGIN': getUrl('/').replace(/^https?:\/\//, ''),
+        'X-PARTNER-ID': DANA_MERCHANT_ID,
+        'X-EXTERNAL-ID': merchantOrderNo,
+        'CHANNEL-ID': channelIdHash // Dynamic 5-char ID based on user agent
+      };
+      
       logger.info('Making Dana payment request', {
         url: `${DANA_API_BASE_URL}${DANA_PAYMENT_ENDPOINT}`,
         merchantOrderNo: payload.partnerReferenceNo,
         merchantId: DANA_MERCHANT_ID,
         amount: amount.toFixed(2),
-        payload: JSON.stringify(payload)
+        headers: headers,
+        payload: JSON.stringify(payload).substring(0, 100) + '...'
       });
       
       // Make the API request to Dana
       const response = await fetch(`${DANA_API_BASE_URL}${DANA_PAYMENT_ENDPOINT}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-TIMESTAMP': danaTimestamp,
-          'X-SIGNATURE': signature,
-          'ORIGIN': getUrl('/'),
-          'X-PARTNER-ID': DANA_MERCHANT_ID,
-          'X-EXTERNAL-ID': merchantOrderNo,
-          'CHANNEL-ID': '00001' // Web channel ID
-        },
+        headers,
         body: JSON.stringify(payload)
       });
       
