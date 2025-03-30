@@ -13,7 +13,7 @@ const DANA_API_BASE_URL = DANA_ENVIRONMENT === 'production'
   : 'https://api.sandbox.dana.id';
 
 // Use the correct QRIS generation endpoint from documentation
-const DANA_PAYMENT_ENDPOINT = '/qr/api/merchant/acquirer/v1/orders/qrcode';
+const DANA_PAYMENT_ENDPOINT = '/v1.0/qr/qr-mpm-generate.htm';
 
 // Simple in-memory rate limiting for payment endpoint
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
