@@ -9,7 +9,7 @@ import { ResultsView } from '@/components/ResultsView';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { Paywall } from '@/components/Paywall';
 import { TokenTopup } from '@/components/TokenTopup';
-import { StripeCheckout } from '@/components/StripeCheckout';
+import { DanaCheckout } from '@/components/DanaCheckout';
 import { useAuth } from '@/lib/auth';
 import { createUser } from '@/lib/supabase';
 import { trackEvent, EventType } from '@/lib/analytics';
@@ -701,7 +701,7 @@ export default function Home() {
         
         {/* Token Topup overlay - for authenticated users */}
         {showTokenTopup && (
-          <StripeCheckout 
+          <DanaCheckout 
             onClose={() => setShowTokenTopup(false)}
             isNewUser={false}
           />

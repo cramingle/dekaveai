@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
-import { PUBLISHABLE_KEY } from '@/lib/stripe';
+import { IS_DANA_CONFIGURED } from '@/lib/dana';
 import { trackEvent, EventType } from '@/lib/analytics';
 
-type StripePackage = {
+type DanaPackage = {
   id: string;
   tokens: number;
   price: number;
@@ -12,21 +12,21 @@ type StripePackage = {
   tier: 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord';
 };
 
-type StripeCheckoutProps = {
+type DanaCheckoutProps = {
   onClose: () => void;
   isNewUser?: boolean;
 };
 
-export function StripeCheckout({ onClose, isNewUser = false }: StripeCheckoutProps) {
+export function DanaCheckout({ onClose, isNewUser = false }: DanaCheckoutProps) {
   const { user } = useAuth();
   const [selectedPackage, setSelectedPackage] = useState<string>(isNewUser ? 'basic' : '');
   const [isLoading, setIsLoading] = useState(false);
   
-  const packages: StripePackage[] = [
-    { id: 'basic', tokens: 100000, price: 5, discount: 0, tier: 'Pioneer' },
-    { id: 'value', tokens: 250000, price: 10, discount: 20, tier: 'Voyager' },
-    { id: 'pro', tokens: 600000, price: 20, discount: 33, tier: 'Dominator' },
-    { id: 'max', tokens: 1000000, price: 25, discount: 50, tier: 'Overlord' },
+  const packages: DanaPackage[] = [
+    { id: 'basic', tokens: 100000, price: 75000, discount: 0, tier: 'Pioneer' },
+    { id: 'value', tokens: 250000, price: 150000, discount: 20, tier: 'Voyager' },
+    { id: 'pro', tokens: 600000, price: 300000, discount: 33, tier: 'Dominator' },
+    { id: 'max', tokens: 1000000, price: 450000, discount: 50, tier: 'Overlord' },
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -40,13 +40,13 @@ export function StripeCheckout({ onClose, isNewUser = false }: StripeCheckoutPro
       packageId: selectedPackage,
       isNewUser: isNewUser,
       userId: user?.id || 'unknown',
-      method: 'stripe',
+      method: 'dana',
       status: 'initiated',
       timestamp: new Date().toISOString()
     });
     
     try {
-      // Call our API endpoint to create a Stripe checkout session
+      // Call our API endpoint to create a Dana payment
       const response = await fetch('/api/payment', {
         method: 'POST',
         headers: {
@@ -65,38 +65,38 @@ export function StripeCheckout({ onClose, isNewUser = false }: StripeCheckoutPro
           packageId: selectedPackage,
           isNewUser: isNewUser,
           userId: user?.id || 'unknown',
-          method: 'stripe',
+          method: 'dana',
           status: 'failed',
-          error: 'Failed to create checkout session',
+          error: 'Failed to create payment',
           timestamp: new Date().toISOString()
         });
         
-        throw new Error('Failed to create checkout session');
+        throw new Error('Failed to create payment');
       }
       
-      const { checkoutUrl } = await response.json();
+      const { paymentUrl } = await response.json();
       
       // Track successful redirect
       trackEvent(EventType.TOKEN_PURCHASE, {
         packageId: selectedPackage,
         isNewUser: isNewUser,
         userId: user?.id || 'unknown',
-        method: 'stripe',
+        method: 'dana',
         status: 'redirected',
         timestamp: new Date().toISOString()
       });
       
-      // Redirect to Stripe checkout
-      window.location.href = checkoutUrl;
+      // Redirect to Dana payment page
+      window.location.href = paymentUrl;
     } catch (error) {
-      console.error('Error creating checkout session:', error);
+      console.error('Error creating payment:', error);
       
       // Track error
       trackEvent(EventType.TOKEN_PURCHASE, {
         packageId: selectedPackage,
         isNewUser: isNewUser,
         userId: user?.id || 'unknown',
-        method: 'stripe',
+        method: 'dana',
         status: 'error',
         error: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString()
@@ -108,10 +108,11 @@ export function StripeCheckout({ onClose, isNewUser = false }: StripeCheckoutPro
   };
   
   const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('id-ID', {
       style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
     }).format(price);
   };
   
@@ -161,7 +162,7 @@ export function StripeCheckout({ onClose, isNewUser = false }: StripeCheckoutPro
             {isNewUser ? 'Select Your First Package' : 'Purchase Tokens'}
           </h2>
           <p className="text-sm sm:text-base text-zinc-400">
-            Secure payment via Stripe
+            Secure payment via Dana
           </p>
           
           {/* Decorative elements */}
@@ -216,7 +217,7 @@ export function StripeCheckout({ onClose, isNewUser = false }: StripeCheckoutPro
                       <div>
                         <p className="text-white font-medium text-sm sm:text-base">{formatTokens(pkg.tokens)} Tokens</p>
                         <p className="text-zinc-400 text-xs mt-0.5">
-                          ${(pkg.price * 100 / pkg.tokens).toFixed(6)} per 1k tokens
+                          Rp{(pkg.price * 100 / pkg.tokens).toFixed(2)} per 1k tokens
                         </p>
                         <p className="text-xs mt-1 text-zinc-300">Tier: <span className="font-medium">{pkg.tier}</span></p>
                       </div>
@@ -236,12 +237,12 @@ export function StripeCheckout({ onClose, isNewUser = false }: StripeCheckoutPro
 
             <div className="mt-2">
               <p className="text-xs text-zinc-500 mb-3">
-                Payments processed securely by Stripe. You will be redirected to Stripe to complete your payment.
+                Payments processed securely by Dana. You will be redirected to Dana to complete your payment.
               </p>
               
-              {PUBLISHABLE_KEY && (
+              {IS_DANA_CONFIGURED && (
                 <div className="flex justify-center">
-                  <img src="/stripe-badge.png" alt="Secured by Stripe" className="h-6" />
+                  <img src="/dana-badge.png" alt="Secured by Dana" className="h-6" />
                 </div>
               )}
             </div>

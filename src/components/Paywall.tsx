@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
 import { trackEvent, EventType } from '@/lib/analytics';
-import { StripeCheckout } from './StripeCheckout';
+import { DanaCheckout } from './DanaCheckout';
 
 type PaywallProps = {
   onClose: () => void;
@@ -12,13 +12,18 @@ type PaywallProps = {
 };
 
 // Cost calculation based on API usage
-// Pricing: $5.00 for 100k tokens, $10.00 for 250k tokens, etc.
+// Pricing in IDR: 75,000 for 100k tokens, 150,000 for 250k tokens, etc.
 // All tokens expire 28 days after purchase
 
 export function Paywall({ onClose, isLoading = false }: PaywallProps) {
-  const { signInWithGoogle } = useAuth();
-  const [showStripeCheckout, setShowStripeCheckout] = useState(false);
+  const { user, signInWithGoogle } = useAuth();
+  const [showDanaCheckout, setShowDanaCheckout] = useState(false);
   const [error, setError] = useState('');
+
+  // Show Dana checkout immediately if user is already logged in
+  if (user && !showDanaCheckout) {
+    setShowDanaCheckout(true);
+  }
 
   const handleAuth = async () => {
     try {
@@ -29,6 +34,7 @@ export function Paywall({ onClose, isLoading = false }: PaywallProps) {
       });
       
       await signInWithGoogle();
+      // After successful sign-in, the user state will update and trigger the checkout
     } catch (error) {
       console.error('Authentication error:', error);
       
@@ -52,8 +58,8 @@ export function Paywall({ onClose, isLoading = false }: PaywallProps) {
       exit={{ opacity: 0 }}
       transition={{ duration: 0.4 }}
     >
-      {showStripeCheckout ? (
-        <StripeCheckout onClose={onClose} isNewUser={true} />
+      {showDanaCheckout ? (
+        <DanaCheckout onClose={onClose} isNewUser={true} />
       ) : (
         <motion.div 
           className="w-full max-w-md bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl overflow-hidden"
@@ -81,7 +87,7 @@ export function Paywall({ onClose, isLoading = false }: PaywallProps) {
               </svg>
             </button>
             <h2 className="text-xl sm:text-2xl font-bold text-white mb-1">
-              Get Started with dekave
+              Sign in to Continue
             </h2>
             <p className="text-sm sm:text-base text-zinc-400">
               Create professional product ads in seconds
@@ -178,29 +184,6 @@ export function Paywall({ onClose, isLoading = false }: PaywallProps) {
                     Sign in with Google
                   </div>
                 )}
-              </motion.button>
-              
-              <div className="text-center">
-                <span className="inline-block text-xs text-zinc-500">
-                  or
-                </span>
-              </div>
-              
-              <motion.button
-                onClick={() => {
-                  trackEvent(EventType.TOKEN_PURCHASE, {
-                    action: 'show_stripe_checkout',
-                    component: 'Paywall',
-                    timestamp: new Date().toISOString()
-                  });
-                  setShowStripeCheckout(true);
-                }}
-                className="w-full flex items-center justify-center py-2.5 px-4 rounded-lg 
-                          bg-gradient-to-r from-zinc-700 to-zinc-800 text-white hover:from-zinc-600 hover:to-zinc-700 font-medium text-sm
-                          transition-colors border border-zinc-600"
-                whileTap={{ scale: 0.98 }}
-              >
-                Purchase Directly
               </motion.button>
             </div>
             

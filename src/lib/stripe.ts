@@ -1,113 +1,86 @@
-import Stripe from 'stripe';
+// =========================================================
+// STRIPE IMPLEMENTATION DISABLED
+// This file will be replaced with Dana payment implementation
+// =========================================================
 
-// Stripe configuration
-const STRIPE_CONFIG = {
-  secretKey: process.env.STRIPE_SECRET_KEY,
-  publishableKey: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
-  priceId: process.env.STRIPE_PRICE_ID,
-  webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-  // Map price IDs to token quantities and tiers
-  tokenPackages: {
-    'price_basic': { tokens: 100000, tier: 'Pioneer' },
-    'price_value': { tokens: 250000, tier: 'Voyager' },
-    'price_pro': { tokens: 600000, tier: 'Dominator' },
-    'price_max': { tokens: 1000000, tier: 'Overlord' },
-  }
+import logger from './logger';
+
+// Dana Payment Integration Constants
+export const IS_PAYMENT_ENABLED = false; // Set to true once Dana implementation is complete
+export const PAYMENT_PROVIDER = 'dana';
+export const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
+
+// Dana requires several endpoint URLs for notifications 
+// 1. Payment Notification URL: Receives payment completion notifications
+// 2. Refund Notification URL: Receives refund completion notifications
+// 3. Payment Code Notification URL: Receives payment code notifications
+// 4. Redirect URL: Where customers are redirected after payment
+
+// Token package mapping - preserved from previous implementation
+export const TOKEN_PACKAGES = {
+  'basic': { tokens: 100000, tier: 'Pioneer' },
+  'value': { tokens: 250000, tier: 'Voyager' },
+  'pro': { tokens: 600000, tier: 'Dominator' },
+  'max': { tokens: 1000000, tier: 'Overlord' },
 };
 
-// Check for required environment variables
-if (!STRIPE_CONFIG.secretKey) {
-  throw new Error('STRIPE_SECRET_KEY is not set. Please set this environment variable to use Stripe services.');
-}
-
-if (!STRIPE_CONFIG.publishableKey) {
-  throw new Error('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is not set. Please set this environment variable to use Stripe services.');
-}
-
-if (!STRIPE_CONFIG.priceId) {
-  throw new Error('STRIPE_PRICE_ID is not set. Please set this environment variable to use Stripe services.');
-}
-
-// Initialize the real Stripe client with the latest API version
-const stripe = new Stripe(STRIPE_CONFIG.secretKey, {
-  apiVersion: '2024-04-10', // Latest API version
-  typescript: true
-});
-
-// Export the price ID and token package mapping
-export const PRICE_ID = STRIPE_CONFIG.priceId;
-export const TOKEN_PACKAGES = STRIPE_CONFIG.tokenPackages;
-export const PUBLISHABLE_KEY = STRIPE_CONFIG.publishableKey;
-
-// Create a Checkout Session for token purchase
+// Mock function that will be replaced with actual Dana implementation
 export async function createCheckoutSession(
   customerEmail: string,
   successUrl: string,
   cancelUrl: string,
   userId: string,
-  packageId: string = 'basic' // Default to basic package
+  packageId: string = 'basic'
 ): Promise<string | null> {
-  try {
-    // Map packageId to priceId
-    const priceId = packageId === 'basic' ? PRICE_ID : 
-                   packageId === 'value' ? 'price_value' :
-                   packageId === 'pro' ? 'price_pro' :
-                   packageId === 'max' ? 'price_max' : PRICE_ID;
-    
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      mode: 'payment',
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      customer_email: customerEmail,
-      client_reference_id: userId,
-      metadata: {
-        userId: userId,
-        packageId: packageId
-      }
-    });
-
-    return session.url;
-  } catch (error) {
-    console.error('Error creating checkout session:', error);
-    return null;
-  }
+  logger.warn('Payment system is not yet implemented. Dana integration pending.');
+  return null;
 }
 
-// Verify payment status using session ID
-export async function verifyPayment(sessionId: string): Promise<boolean> {
-  try {
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
-    return session.payment_status === 'paid';
-  } catch (error) {
-    console.error('Error verifying payment:', error);
-    return false;
-  }
+// Mock function that will be replaced with actual Dana implementation
+export async function verifyPayment(paymentId: string): Promise<boolean> {
+  logger.warn('Payment verification is not yet implemented. Dana integration pending.');
+  return false;
 }
 
-// Get customer information from a session
-export async function getCustomerFromSession(sessionId: string): Promise<{
+// Mock function that will be replaced with actual Dana implementation
+export async function getCustomerFromSession(paymentId: string): Promise<{
   email?: string;
   userId?: string;
   packageId?: string;
 } | null> {
-  try {
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
-    return {
-      email: session.customer_details?.email || undefined,
-      userId: session.client_reference_id || undefined,
-      packageId: session.metadata?.packageId || undefined
-    };
-  } catch (error) {
-    console.error('Error retrieving customer info:', error);
-    return null;
-  }
+  logger.warn('Customer retrieval is not yet implemented. Dana integration pending.');
+  return null;
 }
 
-export default stripe; 
+/*
+ * DANA PAYMENT INTEGRATION GUIDE
+ * 
+ * Based on the provided documentation, Dana requires:
+ * 
+ * 1. Endpoint URLs Initialization:
+ *    - Finish Payment URL: Where payment notifications are sent
+ *    - Finish Refund URL: Where refund notifications are sent
+ *    - Finish Payment Code URL: Where payment code notifications are sent
+ *    - Finish Redirect URL: Where customers are redirected after payment
+ * 
+ * 2. Implementation Steps:
+ *    a. Create API routes for each of these endpoints in Next.js
+ *    b. Implement Dana API client using their SDK or REST API
+ *    c. Handle payment creation, verification, and webhook processing
+ *    d. Update database with payment status
+ * 
+ * 3. Suggested Files Structure:
+ *    - src/lib/dana.ts - Main Dana client implementation
+ *    - src/app/api/webhooks/dana/payment/route.ts - Payment notification endpoint
+ *    - src/app/api/webhooks/dana/refund/route.ts - Refund notification endpoint
+ *    - src/app/api/webhooks/dana/payment-code/route.ts - Payment code endpoint
+ *    - src/app/api/payment/route.ts - Modify existing route to use Dana instead of Stripe
+ * 
+ * 4. Environment Variables Needed:
+ *    - DANA_API_KEY
+ *    - DANA_API_SECRET
+ *    - DANA_MERCHANT_ID
+ *    - DANA_ENVIRONMENT (sandbox/production)
+ */
+
+export default null; 

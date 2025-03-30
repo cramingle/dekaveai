@@ -17,6 +17,14 @@ const MAX_REQUESTS_PER_WINDOW = 30; // Higher limit for Stripe webhooks
 // Store rate limiting data
 const rateLimitTracker: Record<string, { count: number, resetTime: number }> = {};
 
+// Add a mapping from Stripe price IDs to TOKEN_PACKAGES keys
+const PRICE_TO_PACKAGE_MAPPING: Record<string, keyof typeof TOKEN_PACKAGES> = {
+  'price_basic': 'basic',
+  'price_value': 'value',
+  'price_pro': 'pro',
+  'price_max': 'max'
+};
+
 export async function POST(request: NextRequest) {
   try {
     // Apply rate limiting by IP
@@ -135,8 +143,9 @@ export async function POST(request: NextRequest) {
              priceId === 'price_pro' || 
              priceId === 'price_max')) {
           // If we have a direct mapping for this price ID
-          tokenQuantity = TOKEN_PACKAGES[priceId].tokens;
-          tier = TOKEN_PACKAGES[priceId].tier;
+          const packageKey = PRICE_TO_PACKAGE_MAPPING[priceId as keyof typeof PRICE_TO_PACKAGE_MAPPING];
+          tokenQuantity = TOKEN_PACKAGES[packageKey].tokens;
+          tier = TOKEN_PACKAGES[packageKey].tier;
         } else {
           // Use packageId as fallback
           switch (packageId) {

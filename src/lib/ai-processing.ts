@@ -53,8 +53,8 @@ export async function enhanceImage(imageUrl: string): Promise<string> {
   } catch (error) {
     logger.error('Error enhancing image:', error);
     // Fall back to original image if enhancement fails
-    return imageUrl;
-  }
+  return imageUrl;
+}
 }
 
 // AI processing logic using cost-optimized OpenAI models
@@ -328,7 +328,7 @@ async function storeGeneratedImage(imageUrl: string): Promise<string> {
     logger.error('Error storing generated image:', error);
     // Fall back to the original URL if storage fails
     logger.warn('Falling back to temporary OpenAI URL - this will expire within an hour');
-    return imageUrl;
+  return imageUrl;
   }
 }
 

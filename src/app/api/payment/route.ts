@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createCheckoutSession } from '@/lib/stripe';
+import { createDanaPayment, IS_DANA_CONFIGURED } from '@/lib/dana';
 import logger from '@/lib/logger';
 import { trackEvent, EventType } from '@/lib/analytics';
 
@@ -10,9 +10,27 @@ const MAX_REQUESTS_PER_WINDOW = 5; // 5 requests per minute per IP
 // Store rate limiting data
 const rateLimitTracker: Record<string, { count: number, resetTime: number }> = {};
 
-// Create a checkout session for purchasing tokens
+// Create a payment for purchasing tokens
 export async function POST(request: NextRequest) {
   try {
+    // Log initial request
+    logger.info('Payment request received', {
+      url: request.url,
+      method: request.method,
+      headers: Object.fromEntries(request.headers.entries())
+    });
+
+    // Check if Dana is configured
+    if (!IS_DANA_CONFIGURED) {
+      logger.error('Dana payment is not configured', {
+        IS_DANA_CONFIGURED
+      });
+      return NextResponse.json(
+        { error: 'Payment system is not configured' },
+        { status: 503 }
+      );
+    }
+
     // Apply rate limiting
     const ip = request.headers.get('x-forwarded-for') || 'unknown';
     
@@ -52,10 +70,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { email, userId, packageId = 'basic' } = await request.json();
+    // Parse request body
+    let requestBody;
+    try {
+      requestBody = await request.json();
+      logger.info('Payment request body', { body: requestBody });
+    } catch (error) {
+      logger.error('Failed to parse request body', { error });
+      return NextResponse.json(
+        { error: 'Invalid request body' },
+        { status: 400 }
+      );
+    }
+
+    const { email, userId, packageId = 'basic' } = requestBody;
 
     // Validate input
     if (!email) {
+      logger.warn('Missing email in payment request');
       return NextResponse.json(
         { error: 'Email is required' },
         { status: 400 }
@@ -63,57 +95,59 @@ export async function POST(request: NextRequest) {
     }
 
     if (!userId) {
+      logger.warn('Missing userId in payment request');
       return NextResponse.json(
         { error: 'User ID is required' },
         { status: 400 }
       );
     }
 
-    // Create the base URL for success and cancel URLs
-    const origin = request.headers.get('origin') || 'http://localhost:3000';
-    const successUrl = `${origin}/success?session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${origin}/`;
+    logger.info('Creating Dana payment', { email, userId, packageId });
 
-    // Create a checkout session with userId and packageId
-    const checkoutUrl = await createCheckoutSession(
+    // Create Dana payment
+    const paymentUrl = await createDanaPayment(
       email,
-      successUrl,
-      cancelUrl,
       userId,
       packageId
     );
 
-    if (!checkoutUrl) {
+    if (!paymentUrl) {
       // Track failure
       trackEvent(EventType.TOKEN_PURCHASE, { 
         userId,
         email,
         packageId,
+        provider: 'dana',
         status: 'failed',
-        error: 'Failed to create checkout session',
+        error: 'Failed to create payment',
         timestamp: new Date().toISOString()
       });
       
+      logger.error('Failed to create Dana payment', { email, userId, packageId });
+      
       return NextResponse.json(
-        { error: 'Failed to create checkout session' },
+        { error: 'Failed to create payment. Dana payment service may not be configured properly.' },
         { status: 500 }
       );
     }
 
-    // Track successful checkout URL creation
+    // Track successful payment URL creation
     trackEvent(EventType.TOKEN_PURCHASE, { 
       userId,
       email,
       packageId,
-      status: 'checkout_created',
+      provider: 'dana',
+      status: 'payment_created',
       timestamp: new Date().toISOString()
     });
 
-    return NextResponse.json({ checkoutUrl });
+    logger.info('Payment URL created successfully', { paymentUrl });
+
+    return NextResponse.json({ paymentUrl });
   } catch (error) {
-    logger.error('Error creating checkout session:', error);
+    logger.error('Error creating payment:', error);
     return NextResponse.json(
-      { error: 'Failed to create checkout session' },
+      { error: 'Failed to create payment' },
       { status: 500 }
     );
   }
