@@ -42,6 +42,18 @@ const handler = NextAuth({
     url: supabaseUrl,
     secret: supabaseKey,
   }),
+  cookies: {
+    // Make cookies work across different domains and preview URLs
+    sessionToken: {
+      name: `next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+  },
   callbacks: {
     async session({ session, user }) {
       // Get token count from Supabase
@@ -87,11 +99,17 @@ const handler = NextAuth({
       return session;
     },
   },
+  jwt: {
+    // Make sure our JWT configuration is consistent
+    secret: process.env.NEXTAUTH_SECRET,
+    maxAge: 60 * 60 * 24 * 30, // 30 days
+  },
   pages: {
     signIn: '/', // Custom sign-in page (we'll show the paywall)
     error: '/',  // Error page
   },
   secret: process.env.NEXTAUTH_SECRET,
+  debug: process.env.NODE_ENV !== 'production', // Enable debug in non-production
 });
 
 export { handler as GET, handler as POST }; 
