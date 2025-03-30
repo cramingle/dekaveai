@@ -1,4 +1,5 @@
 import logger from './logger';
+import { getUrl, DANA_ENABLED, DANA_ENVIRONMENT } from './env';
 
 // Define Dana configuration interface
 interface DanaConfig {
@@ -13,17 +14,17 @@ interface DanaConfig {
 
 // Dana configuration - client-safe version
 const DANA_CONFIG: DanaConfig = {
-  environment: (process.env.NEXT_PUBLIC_DANA_ENVIRONMENT as 'sandbox' | 'production') || 'sandbox',
+  environment: DANA_ENVIRONMENT,
   endpoints: {
-    paymentNotification: `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/webhooks/dana/payment`,
-    refundNotification: `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/webhooks/dana/refund`,
-    paymentCodeNotification: `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/webhooks/dana/payment-code`,
-    redirectUrl: `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/webhooks/dana/redirect`,
+    paymentNotification: getUrl('/api/webhooks/dana/payment'),
+    refundNotification: getUrl('/api/webhooks/dana/refund'),
+    paymentCodeNotification: getUrl('/api/webhooks/dana/payment-code'),
+    redirectUrl: getUrl('/api/webhooks/dana/redirect'),
   }
 };
 
 // Flag to track if Dana is properly configured - just check for presence of public flag
-export const IS_DANA_CONFIGURED = !!process.env.NEXT_PUBLIC_DANA_ENABLED;
+export const IS_DANA_CONFIGURED = DANA_ENABLED;
 
 // Log configuration status
 if (!IS_DANA_CONFIGURED) {
@@ -68,19 +69,23 @@ export async function createDanaPayment(
     const packageDetails = TOKEN_PACKAGES[packageId as keyof typeof TOKEN_PACKAGES] || TOKEN_PACKAGES.basic;
     
     // Now we'll call our API route to create the payment instead of doing it client-side
-    const response = await fetch('/api/payments/dana/create', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        email: customerEmail,
-        userId: userId,
-        packageId: packageId,
-        amount: packageDetails.price,
-        description: `${packageDetails.tokens} Token Package - ${packageDetails.tier}`
-      }),
-    });
+    const response = await fetch(
+      typeof window === 'undefined' 
+        ? getUrl('/api/payments/dana/create')
+        : '/api/payments/dana/create',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: customerEmail,
+          userId: userId,
+          packageId: packageId,
+          amount: packageDetails.price,
+          description: `${packageDetails.tokens} Token Package - ${packageDetails.tier}`
+        }),
+      });
     
     // Log detailed response information
     logger.info('Dana API response received', {

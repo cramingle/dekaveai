@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { TOKEN_PACKAGES } from '@/lib/dana';
 import logger from '@/lib/logger';
-
-// Dana API configuration (server-side only)
-const DANA_API_KEY = process.env.DANA_API_KEY;
-const DANA_API_SECRET = process.env.DANA_API_SECRET;
-const DANA_MERCHANT_ID = process.env.DANA_MERCHANT_ID;
-const DANA_ENVIRONMENT = process.env.DANA_ENVIRONMENT || 'sandbox';
+import { 
+  DANA_API_KEY, 
+  DANA_API_SECRET, 
+  DANA_MERCHANT_ID, 
+  DANA_ENVIRONMENT,
+  getUrl 
+} from '@/lib/env';
 
 // Dana API base URL
 const DANA_API_BASE_URL = DANA_ENVIRONMENT === 'production'
@@ -45,9 +46,6 @@ export async function POST(request: NextRequest) {
     // Generate order ID
     const orderId = `order_${userId}_${timestamp}_${Math.floor(Math.random() * 1000)}`;
     
-    // Base URL for notifications
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
-    
     // Create request payload
     const payload = {
       merchant_id: DANA_MERCHANT_ID,
@@ -58,11 +56,11 @@ export async function POST(request: NextRequest) {
       customer_email: email,
       timestamp: timestamp,
       notification_urls: {
-        payment: `${baseUrl}/api/webhooks/dana/payment`,
-        refund: `${baseUrl}/api/webhooks/dana/refund`,
-        payment_code: `${baseUrl}/api/webhooks/dana/payment-code`,
+        payment: getUrl('/api/webhooks/dana/payment'),
+        refund: getUrl('/api/webhooks/dana/refund'),
+        payment_code: getUrl('/api/webhooks/dana/payment-code'),
       },
-      redirect_url: `${baseUrl}/api/webhooks/dana/redirect`,
+      redirect_url: getUrl('/api/webhooks/dana/redirect'),
       metadata: {
         userId: userId,
         packageId: packageId
