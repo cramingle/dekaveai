@@ -10,6 +10,7 @@
     "check-env": "node scripts/check-env.js"
   },
   "dependencies": {
+    "@auth/supabase-adapter": "^1.8.0",
     "@next-auth/supabase-adapter": "^0.2.1",
     "@stripe/stripe-js": "^3.0.10",
     "@supabase/supabase-js": "^2.39.8",

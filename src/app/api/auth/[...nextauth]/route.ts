@@ -1,6 +1,6 @@
 import NextAuth from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
-import { SupabaseAdapter } from '@next-auth/supabase-adapter';
+import { SupabaseAdapter } from '@auth/supabase-adapter';
 import { createClient } from '@supabase/supabase-js';
 
 // Extend the Session type to include our custom properties

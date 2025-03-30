@@ -60,3 +60,4 @@ logs
 /sql/schema_update.sql
 /sql/supabase_rls_policies.sql
 /sql/conversation_context_migration.sql
+setup-nextauth-schema.sql

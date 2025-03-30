@@ -90,3 +90,55 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - OpenAI for providing the AI models
 - Vercel for the hosting platform and tools
 - NextAuth.js for authentication support
+
+## Setup and Deployment
+
+### Supabase Setup
+
+Before deploying to Vercel, you need to set up the NextAuth schema in your Supabase database:
+
+1. Go to your Supabase project dashboard
+2. Click on "SQL Editor" in the left sidebar
+3. Create a new query
+4. Paste the contents of the `setup-nextauth-schema.sql` file from this repository
+5. Click "Run" to execute the SQL
+
+### Environment Variables for Vercel
+
+Set the following environment variables in your Vercel project:
+
+#### Authentication (NextAuth + Supabase)
+- `NEXTAUTH_URL`: Your app's URL (e.g., https://yourdomain.com)  
+- `NEXTAUTH_SECRET`: A secret string for NextAuth.js (generate with `openssl rand -base64 32`)
+- `GOOGLE_CLIENT_ID`: Your Google OAuth client ID
+- `GOOGLE_CLIENT_SECRET`: Your Google OAuth client secret
+- `NEXT_PUBLIC_SUPABASE_URL`: Your Supabase project URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Your Supabase anonymous key
+- `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase service role key
+
+#### DANA Payment Integration
+- `DANA_API_KEY`: Your DANA API key
+- `DANA_API_SECRET`: Your DANA API secret
+- `DANA_MERCHANT_ID`: Your DANA merchant ID
+- `DANA_ENVIRONMENT`: Set to 'sandbox' or 'production'
+- `NEXT_PUBLIC_DANA_ENABLED`: Set to 'true' to enable DANA payments
+- `NEXT_PUBLIC_DANA_ENVIRONMENT`: Set to the same value as DANA_ENVIRONMENT
+
+### Running the Project Locally
+
+1. Clone the repository
+2. Install dependencies:
+   ```
+   npm install
+   ```
+3. Start the development server:
+   ```
+   npm run dev
+   ```
+
+### Deployment to Vercel
+
+1. Push your code to a Git repository
+2. Connect the repository to Vercel
+3. Configure the environment variables as outlined above
+4. Deploy the project
