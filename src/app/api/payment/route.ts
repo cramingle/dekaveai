@@ -13,7 +13,7 @@ const DANA_API_BASE_URL = DANA_ENVIRONMENT === 'production'
   : 'https://api.sandbox.dana.id';
 
 // Use the correct QRIS generation endpoint from documentation
-const DANA_PAYMENT_ENDPOINT = '/v1.0/qr/qr-mpm-generate.htm';
+const DANA_PAYMENT_ENDPOINT = '/qr/api/merchant/acquirer/v1/orders/qrcode';
 
 // Simple in-memory rate limiting for payment endpoint
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
@@ -133,7 +133,15 @@ export async function POST(request: NextRequest) {
       // Format timestamp in DANA format (YYYY-MM-DDTHH:mm:ss+07:00)
       // Use correct timezone format for Indonesia (GMT+7)
       const date = new Date();
-      const danaTimestamp = date.toISOString().replace('Z', '+07:00');
+      // Format manually to ensure correct format: YYYY-MM-DDTHH:mm:ss+07:00
+      const pad = (num: number) => num.toString().padStart(2, '0');
+      const year = date.getUTCFullYear();
+      const month = pad(date.getUTCMonth() + 1);
+      const day = pad(date.getUTCDate());
+      const hours = pad(date.getUTCHours() + 7); // Add 7 hours for Indonesia timezone
+      const minutes = pad(date.getUTCMinutes());
+      const seconds = pad(date.getUTCSeconds());
+      const danaTimestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+07:00`;
       
       // Create request payload based on QRIS MPM (Acquirer) Generate QRIS API
       const payload = {
