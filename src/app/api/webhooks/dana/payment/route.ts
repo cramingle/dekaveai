@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import logger from '@/lib/logger';
 import { updateUserTokens, getUserTokens } from '@/lib/supabase';
-import { TOKEN_PACKAGES } from '@/lib/dana'; // Import from dana.ts instead of stripe.ts
+import { TOKEN_PACKAGES } from '@/lib/dana';
+import { DANA_API_SECRET } from '@/lib/env';
+import crypto from 'crypto';
+import { db } from '@/lib/db';
+import { transactions } from '@/lib/db/schema';
+import { trackEvent, EventType } from '@/lib/analytics';
+import { sql, eq } from 'drizzle-orm';
 
 /**
  * Dana Payment Notification Webhook
@@ -11,44 +17,95 @@ import { TOKEN_PACKAGES } from '@/lib/dana'; // Import from dana.ts instead of s
  */
 export async function POST(req: NextRequest) {
   try {
+    // Log headers for debugging
+    logger.info('Dana payment webhook headers', {
+      headers: Object.fromEntries(req.headers.entries())
+    });
+    
     // Get the request body
     const payload = await req.json();
-    logger.info('Dana payment notification received', { payloadSummary: summarizePayload(payload) });
+    logger.info('Dana payment notification received', { payload });
 
-    // TODO: Add signature verification with Dana's SDK
-    // const isSignatureValid = verifyDanaSignature(req);
-    // if (!isSignatureValid) {
-    //   logger.warn('Invalid Dana signature', { headers: Object.fromEntries(req.headers.entries()) });
-    //   return NextResponse.json({ success: false, message: 'Invalid signature' }, { status: 401 });
-    // }
+    // Verify signature if provided
+    const signature = req.headers.get('X-SIGNATURE');
+    if (signature && DANA_API_SECRET) {
+      const calculatedSignature = crypto
+        .createHmac('sha256', DANA_API_SECRET)
+        .update(JSON.stringify(payload))
+        .digest('hex');
+        
+      if (calculatedSignature !== signature) {
+        logger.warn('Invalid Dana signature', { 
+          providedSignature: signature,
+          calculatedSignature
+        });
+        return NextResponse.json(
+          { success: false, message: 'Invalid signature' }, 
+          { status: 401 }
+        );
+      }
+    }
 
     // Extract payment details from the payload
-    // Note: Adjust these field names based on actual Dana API response structure
+    // Adjust based on actual DANA QRIS notification structure
     const {
-      transaction_id,
-      status,
-      amount,
-      metadata,
-    } = payload;
+      merchantId,
+      merchantOrderNo,
+      acquirementStatus,
+      orderAmount,
+      transactionAmount,
+      acquirementTime
+    } = payload.response || {};
 
-    // Check payment status
-    if (status !== 'SUCCESS') {
-      logger.warn('Payment not successful', { status, transaction_id });
+    // Check if payment status is successful (FULL_PAYMENT)
+    if (acquirementStatus !== 'FULL_PAYMENT') {
+      logger.warn('Payment not successful', { 
+        acquirementStatus, 
+        merchantOrderNo 
+      });
       return NextResponse.json({ success: false, message: 'Payment not successful' });
     }
 
-    // Extract user and package information from metadata
-    // In actual implementation, Dana may provide different ways to include metadata
-    const userId = metadata?.userId;
-    const packageId = metadata?.packageId || 'basic';
+    // Find the transaction in our database
+    const transaction = await db
+      .select()
+      .from(transactions)
+      .where(sql`metadata->>'merchantOrderNo' = ${merchantOrderNo}`)
+      .limit(1)
+      .then(rows => rows[0]);
 
-    if (!userId) {
-      logger.error('User ID not found in payment metadata', { metadata });
-      return NextResponse.json({ success: false, message: 'User ID not found' }, { status: 400 });
+    if (!transaction) {
+      logger.error('Transaction not found', { merchantOrderNo });
+      return NextResponse.json(
+        { success: false, message: 'Transaction not found' }, 
+        { status: 404 }
+      );
     }
 
+    // Extract user and package information from transaction
+    const userId = transaction.userId;
+    const packageId = transaction.packageId;
+
+    if (!userId) {
+      logger.error('User ID not found in transaction', { transaction });
+      return NextResponse.json(
+        { success: false, message: 'User ID not found' }, 
+        { status: 400 }
+      );
+    }
+
+    // Update transaction status
+    await db
+      .update(transactions)
+      .set({ 
+        status: 'COMPLETED',
+        updatedAt: new Date()
+      })
+      .where(eq(transactions.id, transaction.id));
+
     // Get token amount from package
-    const tokenAmount = TOKEN_PACKAGES[packageId as keyof typeof TOKEN_PACKAGES]?.tokens || TOKEN_PACKAGES.basic.tokens;
+    const tokenAmount = TOKEN_PACKAGES[packageId as keyof typeof TOKEN_PACKAGES]?.tokens || 
+                        TOKEN_PACKAGES.basic.tokens;
     
     // Get current user tokens
     const currentTokens = await getUserTokens(userId);
@@ -63,17 +120,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: 'Failed to update user tokens' });
     }
     
+    // Track successful payment
+    trackEvent(EventType.TOKEN_PURCHASE, { 
+      userId,
+      packageId,
+      provider: 'dana',
+      status: 'payment_completed',
+      amount: transactionAmount?.value || orderAmount?.value,
+      currency: transactionAmount?.currency || orderAmount?.currency || 'IDR',
+      merchantOrderNo,
+      timestamp: new Date().toISOString()
+    });
+    
     logger.info('Payment processed successfully', { 
       userId, 
       packageId, 
       tokenAmount, 
-      newTokenCount 
+      newTokenCount,
+      merchantOrderNo
     });
     
     // Return success to Dana
     return NextResponse.json({ success: true });
   } catch (error) {
-    logger.error('Error processing Dana payment webhook', error);
+    logger.error('Error processing Dana payment webhook', { error });
     return NextResponse.json(
       { success: false, message: 'Error processing webhook' },
       { status: 500 }
@@ -83,6 +153,16 @@ export async function POST(req: NextRequest) {
 
 // Helper function to summarize payload for logging without sensitive data
 function summarizePayload(payload: any): any {
-  const { transaction_id, status, amount } = payload || {};
-  return { transaction_id, status, amount };
+  if (!payload || typeof payload !== 'object') return payload;
+  
+  const { response } = payload;
+  if (!response) return payload;
+  
+  return {
+    merchantId: response.merchantId,
+    merchantOrderNo: response.merchantOrderNo,
+    acquirementStatus: response.acquirementStatus,
+    orderAmount: response.orderAmount,
+    acquirementTime: response.acquirementTime
+  };
 } 

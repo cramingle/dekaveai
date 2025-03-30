@@ -38,6 +38,9 @@ export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 export const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+// Database
+export const DATABASE_URL = process.env.DATABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('supabase', 'postgres');
+
 // Dana Payment
 export const DANA_ENABLED = !!process.env.NEXT_PUBLIC_DANA_ENABLED;
 export const DANA_ENVIRONMENT = (process.env.NEXT_PUBLIC_DANA_ENVIRONMENT as 'sandbox' | 'production') || 'sandbox';
@@ -52,6 +55,7 @@ if (typeof window === 'undefined') {
     DANA_ENABLED,
     DANA_ENVIRONMENT,
     BASE_URL,
+    DATABASE_URL: DATABASE_URL ? '✓ Set' : '✗ Missing',
     DANA_API_KEY: DANA_API_KEY ? '✓ Set' : '✗ Missing',
     DANA_API_SECRET: DANA_API_SECRET ? '✓ Set' : '✗ Missing',
     DANA_MERCHANT_ID: DANA_MERCHANT_ID ? '✓ Set' : '✗ Missing',
@@ -74,6 +78,24 @@ export function getUrl(path: string): string {
   return `${baseUrl}${normalizedPath}`;
 }
 
+// Export an env object for structured access
+export const env = {
+  BASE_URL,
+  NEXTAUTH_URL,
+  NEXTAUTH_SECRET,
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
+  SUPABASE_SERVICE_KEY,
+  DATABASE_URL,
+  DANA_ENABLED,
+  DANA_ENVIRONMENT,
+  DANA_API_KEY,
+  DANA_API_SECRET,
+  DANA_MERCHANT_ID,
+  IS_PRODUCTION,
+  IS_DEVELOPMENT
+};
+
 // Export default object for easier importing
 export default {
   BASE_URL,
@@ -82,6 +104,7 @@ export default {
   SUPABASE_URL,
   SUPABASE_ANON_KEY,
   SUPABASE_SERVICE_KEY,
+  DATABASE_URL,
   DANA_ENABLED,
   DANA_ENVIRONMENT,
   DANA_API_KEY,

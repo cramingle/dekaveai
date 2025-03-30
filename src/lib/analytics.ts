@@ -19,7 +19,8 @@ export enum EventType {
   TOKEN_USAGE = 'token_usage',
   QUALITY_SELECTION = 'quality_selection',
   IMAGE_UPLOAD = 'image_upload',
-  PAGE_VIEW = 'page_view'
+  PAGE_VIEW = 'page_view',
+  PAYMENT_REDIRECT = 'payment_redirect'
 }
 
 // Track events using Vercel Analytics

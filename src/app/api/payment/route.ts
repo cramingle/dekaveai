@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createDanaPayment, IS_DANA_CONFIGURED, TOKEN_PACKAGES } from '@/lib/dana';
+import { TOKEN_PACKAGES } from '@/lib/dana';
 import logger from '@/lib/logger';
 import { trackEvent, EventType } from '@/lib/analytics';
 import crypto from 'crypto';
 import { DANA_API_KEY, DANA_API_SECRET, DANA_MERCHANT_ID, DANA_ENVIRONMENT, getUrl } from '@/lib/env';
+import { db } from '@/lib/db';
+import { transactions } from '@/lib/db/schema';
 
 // DANA API base URL
 const DANA_API_BASE_URL = DANA_ENVIRONMENT === 'production'
-  ? 'https://api.dana.id' // Production URL
-  : 'https://api.sandbox.dana.id'; // Sandbox URL
+  ? 'https://api.dana.id'
+  : 'https://api-sandbox.dana.id';
 
-// DANA API endpoint for payment creation
-const DANA_PAYMENT_ENDPOINT = '/payments/create'; // Use the API path without version prefix
+// DANA payment endpoint for QRIS MPM (Acquirer)
+const DANA_PAYMENT_ENDPOINT = '/qr/api/merchant/acquirer/v1/orders/qrcode';
 
 // Simple in-memory rate limiting for payment endpoint
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
@@ -31,13 +33,11 @@ export async function POST(request: NextRequest) {
     });
 
     // Check if Dana is configured
-    if (!IS_DANA_CONFIGURED) {
+    if (!DANA_API_KEY || !DANA_API_SECRET || !DANA_MERCHANT_ID) {
       logger.error('Dana payment is not configured', {
-        IS_DANA_CONFIGURED,
-        DANA_ENVIRONMENT: process.env.NEXT_PUBLIC_DANA_ENVIRONMENT,
-        DANA_API_KEY: process.env.DANA_API_KEY ? '✓ Set' : '✗ Missing',
-        DANA_API_SECRET: process.env.DANA_API_SECRET ? '✓ Set' : '✗ Missing',
-        DANA_MERCHANT_ID: process.env.DANA_MERCHANT_ID ? '✓ Set' : '✗ Missing'
+        DANA_API_KEY: DANA_API_KEY ? '✓ Set' : '✗ Missing',
+        DANA_API_SECRET: DANA_API_SECRET ? '✓ Set' : '✗ Missing',
+        DANA_MERCHANT_ID: DANA_MERCHANT_ID ? '✓ Set' : '✗ Missing'
       });
       return NextResponse.json(
         { error: 'Payment system is not configured' },
@@ -116,19 +116,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if Dana API keys are configured on the server
-    if (!DANA_API_KEY || !DANA_API_SECRET || !DANA_MERCHANT_ID) {
-      logger.error('Dana payment is not configured on the server', {
-        DANA_API_KEY: DANA_API_KEY ? '✓ Set' : '✗ Missing',
-        DANA_API_SECRET: DANA_API_SECRET ? '✓ Set' : '✗ Missing',
-        DANA_MERCHANT_ID: DANA_MERCHANT_ID ? '✓ Set' : '✗ Missing'
-      });
-      return NextResponse.json(
-        { error: 'Dana payment is not configured on the server' },
-        { status: 500 }
-      );
-    }
-
     // Get package details
     const packageDetails = TOKEN_PACKAGES[packageId as keyof typeof TOKEN_PACKAGES] || TOKEN_PACKAGES.basic;
     const amount = packageDetails.price;
@@ -140,33 +127,44 @@ export async function POST(request: NextRequest) {
       // Calculate timestamp for request
       const timestamp = Math.floor(Date.now() / 1000).toString();
       
-      // Generate order ID
-      const orderId = `order_${userId}_${timestamp}_${Math.floor(Math.random() * 1000)}`;
+      // Generate unique order ID
+      const merchantOrderNo = `DEKAVE${userId.substring(0, 6)}${timestamp}${Math.floor(Math.random() * 1000)}`;
       
-      // Create request payload
+      // Format timestamp in DANA format (YYYY-MM-DDTHH:mm:ss+07:00)
+      const danaTimestamp = new Date().toISOString().replace('Z', '+07:00');
+      
+      // Create request payload based on QRIS MPM (Acquirer) Generate QRIS API
       const payload = {
-        merchant_id: DANA_MERCHANT_ID,
-        order_id: orderId,
-        amount: amount.toFixed(2),
-        currency: 'IDR',
-        item_description: description,
-        customer_email: email,
-        timestamp: timestamp,
-        sandbox_mode: DANA_ENVIRONMENT === 'sandbox', // Add explicit sandbox mode flag
-        notification_urls: {
-          payment: getUrl('/api/webhooks/dana/payment'),
-          refund: getUrl('/api/webhooks/dana/refund'),
-          payment_code: getUrl('/api/webhooks/dana/payment-code'),
-        },
-        redirect_url: getUrl('/api/webhooks/dana/redirect'),
-        metadata: {
-          userId: userId,
-          packageId: packageId
+        request: {
+          merchantId: DANA_MERCHANT_ID,
+          merchantOrderNo: merchantOrderNo,
+          orderTitle: description,
+          orderDesc: `Token purchase for user ${email}`,
+          orderAmount: {
+            currency: "IDR",
+            value: amount.toFixed(2)
+          },
+          merchantRedirectUrl: getUrl('/api/webhooks/dana/redirect'),
+          merchantCallbackUrl: getUrl('/api/webhooks/dana/payment'),
+          expireTime: 15, // QR code expires in 15 minutes
+          notifyUrl: getUrl('/api/webhooks/dana/notify'),
+          paymentChannels: ["QRIS"],
+          orderTerminalType: "WEB",
+          productCode: packageId,
+          productQuantity: 1,
+          merchantTransInfo: {
+            merchantTransType: "ONLINE_PURCHASE",
+            merchantUserId: userId,
+            userInfo: {
+              userId: userId,
+              userEmail: email
+            }
+          }
         }
       };
       
-      // Generate signature
-      const signatureBase = `${DANA_MERCHANT_ID}|${orderId}|${amount.toFixed(2)}|${timestamp}`;
+      // Generate signature using DANA's signature format
+      const signatureBase = JSON.stringify(payload);
       const signature = crypto
         .createHmac('sha256', DANA_API_SECRET)
         .update(signatureBase)
@@ -175,10 +173,9 @@ export async function POST(request: NextRequest) {
       // Log the API request for debugging
       logger.info('Making Dana payment request', {
         url: `${DANA_API_BASE_URL}${DANA_PAYMENT_ENDPOINT}`,
-        orderId,
+        merchantOrderNo,
         merchantId: DANA_MERCHANT_ID,
         amount: amount.toFixed(2),
-        timestamp,
         payload: JSON.stringify(payload)
       });
       
@@ -188,12 +185,13 @@ export async function POST(request: NextRequest) {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
-          'X-Dana-Merchant-ID': DANA_MERCHANT_ID,
-          'X-Dana-Signature': signature,
-          'X-Dana-Timestamp': timestamp,
-          'X-Dana-API-Key': DANA_API_KEY,
-          'User-Agent': 'Dekave-AI-App/1.0',
-          'Cache-Control': 'no-cache'
+          'Authorization': `Bearer ${DANA_API_KEY}`, // Authorization with bearer token
+          'X-TIMESTAMP': danaTimestamp,
+          'X-SIGNATURE': signature,
+          'ORIGIN': getUrl('/'),
+          'X-PARTNER-ID': DANA_MERCHANT_ID,
+          'X-EXTERNAL-ID': merchantOrderNo,
+          'CHANNEL-ID': '00001' // Web channel ID
         },
         body: JSON.stringify(payload)
       });
@@ -215,141 +213,155 @@ export async function POST(request: NextRequest) {
         contentLength: responseText.length
       });
       
-      if (!response.ok) {
-        // Get the error response
-        let errorData;
-        try {
-          // Try to parse as JSON if possible
-          errorData = responseText && responseText.length > 0 ? JSON.parse(responseText) : { error: 'Empty response' };
-        } catch (e: any) {
-          // If JSON parsing fails, use the text
-          errorData = { text: responseText, parseError: e.message };
-        }
-        
-        logger.error('Dana payment creation failed', {
-          status: response.status,
-          error: errorData,
-          request: {
-            url: `${DANA_API_BASE_URL}${DANA_PAYMENT_ENDPOINT}`,
-            payload: JSON.stringify(payload)
-          }
-        });
-        
-        // Track failure
-        trackEvent(EventType.TOKEN_PURCHASE, { 
-          userId,
-          email,
-          packageId,
-          provider: 'dana',
-          status: 'failed',
-          error: 'API Error',
-          timestamp: new Date().toISOString()
-        });
-        
-        return NextResponse.json(
-          { error: 'Failed to create Dana payment', details: errorData },
-          { status: response.status }
-        );
-      }
-      
-      // For success response, try to parse the JSON data from the text we already read
-      let data;
       try {
-        data = responseText && responseText.length > 0 ? JSON.parse(responseText) : {};
-      } catch (e: any) {
-        logger.error('Failed to parse Dana API success response', {
-          error: e.message,
-          text: responseText
+        if (response.ok) {
+          const data = await response.json();
+          
+          // Check if the response is successful
+          if (data.response && data.response.qrCode) {
+            // The QRIS qrCode is the string representation of the QR Code
+            const qrCode = data.response.qrCode;
+            
+            // Update the successful transaction in database
+            await db.insert(transactions).values({
+              id: crypto.randomUUID(),
+              userId,
+              packageId,
+              amount: amount.toString(),
+              status: "PENDING", // Initial status is pending until callback
+              provider: "DANA",
+              description,
+              metadata: {
+                merchantOrderNo,
+                qrCode,
+                orderAmount: amount,
+                currency: "IDR"
+              },
+              createdAt: new Date()
+            });
+            
+            // Log success
+            logger.info('Dana payment created successfully', {
+              orderId: merchantOrderNo,
+              packageId,
+              userId,
+              qrCode: qrCode.substring(0, 20) + '...' // Log only part of QR code for security
+            });
+            
+            // Track successful payment QR generation
+            trackEvent(EventType.TOKEN_PURCHASE, { 
+              userId,
+              email,
+              packageId,
+              provider: 'dana',
+              status: 'qr_generated',
+              timestamp: new Date().toISOString()
+            });
+            
+            // Return successful response with QR code
+            return NextResponse.json({
+              success: true,
+              orderId: merchantOrderNo,
+              qrCode: qrCode,
+              expireTime: 15 // minutes
+            });
+          } else {
+            // Handle API error response
+            logger.error('Dana payment failed - API returned error', {
+              error: data.response?.errorMessage || 'Unknown error',
+              code: data.response?.errorCode || 'UNKNOWN',
+              merchantOrderNo
+            });
+            
+            // Track failure
+            trackEvent(EventType.TOKEN_PURCHASE, { 
+              userId,
+              email,
+              packageId,
+              provider: 'dana',
+              status: 'qr_generation_failed',
+              error: data.response?.errorMessage || 'Unknown error',
+              timestamp: new Date().toISOString()
+            });
+
+            return NextResponse.json(
+              { 
+                success: false, 
+                message: 'Payment initiation failed',
+                errorCode: data.response?.errorCode || 'UNKNOWN',
+                errorMessage: data.response?.errorMessage || 'Unknown error from payment provider'
+              },
+              { status: 400 }
+            );
+          }
+        } else {
+          // Handle HTTP error response
+          const errorData = await response.json().catch(() => ({ 
+            errorCode: 'HTTP_ERROR', 
+            errorMessage: `HTTP Error ${response.status}`
+          }));
+          
+          const isRetryable = response.status >= 500 || response.status === 429;
+          
+          logger.error('Dana payment failed - HTTP error', {
+            status: response.status,
+            errorCode: errorData.errorCode || 'UNKNOWN',
+            errorMessage: errorData.errorMessage || 'Unknown error',
+            isRetryable: isRetryable,
+            merchantOrderNo
+          });
+          
+          // Track failure
+          trackEvent(EventType.TOKEN_PURCHASE, { 
+            userId,
+            email,
+            packageId,
+            provider: 'dana',
+            status: 'api_error',
+            errorCode: errorData.errorCode || 'UNKNOWN',
+            errorMessage: errorData.errorMessage || 'Unknown error',
+            timestamp: new Date().toISOString()
+          });
+          
+          return NextResponse.json(
+            { 
+              success: false, 
+              message: 'Payment service error',
+              errorCode: errorData.errorCode || 'UNKNOWN',
+              errorMessage: errorData.errorMessage || 'Unknown error from payment provider',
+              isRetryable
+            },
+            { status: isRetryable ? 503 : 400 }
+          );
+        }
+      } catch (parseError) {
+        logger.error('Error parsing Dana API response', {
+          error: parseError,
+          responseText
         });
-        data = {}; // Empty object as fallback
-      }
-      
-      // Log success
-      logger.info('Dana payment created successfully', {
-        orderId,
-        packageId,
-        userId,
-        data
-      });
-      
-      // Check if we received a payment URL
-      if (!data.payment_url) {
-        logger.error('Dana API response missing payment_url', { data, responseText });
         
         return NextResponse.json(
-          { error: 'Missing payment URL in Dana response' },
+          { 
+            success: false, 
+            message: 'Error processing payment provider response',
+            error: 'RESPONSE_PARSING_ERROR'
+          },
           { status: 500 }
         );
       }
-      
-      // Track successful payment URL creation
-      trackEvent(EventType.TOKEN_PURCHASE, { 
-        userId,
-        email,
-        packageId,
-        provider: 'dana',
-        status: 'payment_created',
-        timestamp: new Date().toISOString()
-      });
-      
-      // Return success response with payment URL
-      return NextResponse.json({
-        success: true,
-        orderId: orderId,
-        paymentUrl: data.payment_url
-      });
     } catch (error) {
-      logger.error('Error creating Dana payment directly:', error);
+      logger.error('Error creating Dana payment:', error);
       
-      // If direct Dana API fails, fall back to previous implementation
-      logger.info('Falling back to library implementation');
-      
-      // Create Dana payment using the library function
-      const paymentUrl = await createDanaPayment(
-        email,
-        userId,
-        packageId
+      return NextResponse.json(
+        { error: 'Failed to create payment' },
+        { status: 500 }
       );
-
-      if (!paymentUrl) {
-        // Track failure
-        trackEvent(EventType.TOKEN_PURCHASE, { 
-          userId,
-          email,
-          packageId,
-          provider: 'dana',
-          status: 'failed',
-          error: 'Failed to create payment',
-          timestamp: new Date().toISOString()
-        });
-        
-        logger.error('Fallback also failed - Cannot create Dana payment', { email, userId, packageId });
-        
-        return NextResponse.json(
-          { error: 'Failed to create payment. Dana payment service may not be configured properly.' },
-          { status: 500 }
-        );
-      }
-
-      // Track successful payment URL creation
-      trackEvent(EventType.TOKEN_PURCHASE, { 
-        userId,
-        email,
-        packageId,
-        provider: 'dana',
-        status: 'payment_created',
-        timestamp: new Date().toISOString()
-      });
-
-      logger.info('Payment URL created successfully via fallback', { paymentUrl });
-
-      return NextResponse.json({ paymentUrl });
     }
   } catch (error) {
-    logger.error('Error creating payment:', error);
+    logger.error('Error processing payment request:', error);
     return NextResponse.json(
-      { error: 'Failed to create payment' },
+      { error: 'Failed to process payment request' },
       { status: 500 }
     );
   }
-} 
+}
