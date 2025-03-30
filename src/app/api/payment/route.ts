@@ -143,13 +143,11 @@ export async function POST(request: NextRequest) {
       const seconds = pad(date.getUTCSeconds());
       const danaTimestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+07:00`;
       
-      // Create request payload based on QRIS MPM (Acquirer) Generate QRIS API
+      // Create request payload with only mandatory fields
       const payload = {
         merchantId: DANA_MERCHANT_ID,
-        subMerchantId: "", // Optional
-        storeId: "DEKAVE", // Unique identifier for our store
-        terminalId: "", // Optional
-        partnerReferenceNo: merchantOrderNo, // Mandatory, 64 max
+        storeId: "DEKAVE",
+        partnerReferenceNo: merchantOrderNo,
         amount: {
           value: amount.toFixed(2),
           currency: "IDR"
@@ -180,22 +178,23 @@ export async function POST(request: NextRequest) {
         .substring(0, 5)
         .toUpperCase();
       
-      // Create headers using the Headers API exactly as shown in documentation
-      const headers = new Headers();
-      headers.set('Content-Type', 'application/json');
-      headers.set('X-TIMESTAMP', danaTimestamp);
-      headers.set('X-SIGNATURE', signature);
-      headers.set('ORIGIN', getUrl('/').replace(/^https?:\/\//, ''));
-      headers.set('X-PARTNER-ID', DANA_CLIENT_ID || "");
-      headers.set('X-EXTERNAL-ID', merchantOrderNo);
-      headers.set('CHANNEL-ID', channelIdHash);
+      // Create headers as a plain object exactly as shown in the documentation
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-TIMESTAMP': danaTimestamp,
+        'X-SIGNATURE': signature,
+        'ORIGIN': getUrl('/').replace(/^https?:\/\//, ''),
+        'X-PARTNER-ID': DANA_CLIENT_ID || "",
+        'X-EXTERNAL-ID': merchantOrderNo,
+        'CHANNEL-ID': channelIdHash
+      };
       
       logger.info('Making Dana payment request', {
         url: `${DANA_API_BASE_URL}${DANA_PAYMENT_ENDPOINT}`,
         merchantOrderNo: payload.partnerReferenceNo,
         merchantId: DANA_MERCHANT_ID,
         amount: payload.amount.value,
-        headers: Object.fromEntries(headers.entries()),
+        headers: headers,
         payload: JSON.stringify(payload).substring(0, 100) + '...'
       });
       
