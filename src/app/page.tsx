@@ -414,8 +414,7 @@ export default function Home() {
               className={`text-sm bg-zinc-800/50 backdrop-blur-sm rounded-full px-3 py-1.5 hover:bg-zinc-700/50 transition-colors flex items-center ${tokens < 3 ? 'text-amber-400' : tokens < maxTokens / 2 ? 'text-zinc-300' : 'text-zinc-400'}`}
             >
               <span className="font-medium">{tokens}</span>
-              <span className="mx-1">/</span>
-              <span>{getMaxTokens()}</span>
+              <span className="ml-1">tokens</span>
               {tokens < 3 && (
                 <span className="ml-1.5 text-amber-400">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
