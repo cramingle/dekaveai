@@ -10,7 +10,7 @@ import { transactions } from '@/lib/db/schema';
 // DANA API base URL
 const DANA_API_BASE_URL = DANA_ENVIRONMENT === 'production'
   ? 'https://api.dana.id'
-  : 'https://api-sandbox.dana.id';
+  : 'https://api.sandbox.dana.id';
 
 // DANA payment endpoint for QRIS MPM (Acquirer)
 const DANA_PAYMENT_ENDPOINT = '/qr/api/merchant/acquirer/v1/orders/qrcode';
