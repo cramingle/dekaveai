@@ -47,6 +47,8 @@ export const DANA_ENVIRONMENT = (process.env.NEXT_PUBLIC_DANA_ENVIRONMENT as 'sa
 export const DANA_API_KEY = process.env.DANA_API_KEY;
 export const DANA_API_SECRET = process.env.DANA_API_SECRET;
 export const DANA_MERCHANT_ID = process.env.DANA_MERCHANT_ID;
+export const DANA_CLIENT_ID = process.env.DANA_CLIENT_ID;
+export const DANA_CLIENT_SECRET = process.env.DANA_CLIENT_SECRET;
 
 // Log environment status on server-side only (to avoid client-side logs)
 if (typeof window === 'undefined') {
@@ -59,6 +61,8 @@ if (typeof window === 'undefined') {
     DANA_API_KEY: DANA_API_KEY ? '✓ Set' : '✗ Missing',
     DANA_API_SECRET: DANA_API_SECRET ? '✓ Set' : '✗ Missing',
     DANA_MERCHANT_ID: DANA_MERCHANT_ID ? '✓ Set' : '✗ Missing',
+    DANA_CLIENT_ID: DANA_CLIENT_ID ? '✓ Set' : '✗ Missing',
+    DANA_CLIENT_SECRET: DANA_CLIENT_SECRET ? '✓ Set' : '✗ Missing',
   });
 }
 
@@ -92,6 +96,8 @@ export const env = {
   DANA_API_KEY,
   DANA_API_SECRET,
   DANA_MERCHANT_ID,
+  DANA_CLIENT_ID,
+  DANA_CLIENT_SECRET,
   IS_PRODUCTION,
   IS_DEVELOPMENT
 };
@@ -110,6 +116,8 @@ export default {
   DANA_API_KEY,
   DANA_API_SECRET,
   DANA_MERCHANT_ID,
+  DANA_CLIENT_ID,
+  DANA_CLIENT_SECRET,
   IS_PRODUCTION,
   IS_DEVELOPMENT,
   getUrl

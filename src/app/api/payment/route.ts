@@ -3,7 +3,7 @@ import { TOKEN_PACKAGES } from '@/lib/dana';
 import logger from '@/lib/logger';
 import { trackEvent, EventType } from '@/lib/analytics';
 import crypto from 'crypto';
-import { DANA_API_KEY, DANA_API_SECRET, DANA_MERCHANT_ID, DANA_ENVIRONMENT, getUrl } from '@/lib/env';
+import { DANA_API_KEY, DANA_API_SECRET, DANA_MERCHANT_ID, DANA_ENVIRONMENT, DANA_CLIENT_ID, DANA_CLIENT_SECRET, getUrl } from '@/lib/env';
 import { db } from '@/lib/db';
 import { transactions } from '@/lib/db/schema';
 
@@ -209,23 +209,22 @@ export async function POST(request: NextRequest) {
         .substring(0, 5)
         .toUpperCase();
       
-      // Log the API request for debugging
-      const headers = {
-        'Content-Type': 'application/json',
-        'X-TIMESTAMP': danaTimestamp,
-        'X-SIGNATURE': signature,
-        'ORIGIN': getUrl('/').replace(/^https?:\/\//, ''),
-        'X-PARTNER-ID': DANA_MERCHANT_ID,
-        'X-EXTERNAL-ID': merchantOrderNo,
-        'CHANNEL-ID': channelIdHash // Dynamic 5-char ID based on user agent
-      };
+      // Create headers using the Headers API to handle undefined values
+      const headers = new Headers();
+      headers.set('Content-Type', 'application/json');
+      headers.set('X-TIMESTAMP', danaTimestamp);
+      headers.set('X-SIGNATURE', signature);
+      headers.set('ORIGIN', getUrl('/').replace(/^https?:\/\//, ''));
+      if (DANA_CLIENT_ID) headers.set('X-PARTNER-ID', DANA_CLIENT_ID);
+      headers.set('X-EXTERNAL-ID', merchantOrderNo);
+      headers.set('CHANNEL-ID', channelIdHash);
       
       logger.info('Making Dana payment request', {
         url: `${DANA_API_BASE_URL}${DANA_PAYMENT_ENDPOINT}`,
         merchantOrderNo: payload.partnerReferenceNo,
         merchantId: DANA_MERCHANT_ID,
         amount: amount.toFixed(2),
-        headers: headers,
+        headers: Object.fromEntries(headers.entries()),
         payload: JSON.stringify(payload).substring(0, 100) + '...'
       });
       
