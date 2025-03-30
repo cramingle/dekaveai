@@ -36,13 +36,6 @@ export const IS_DANA_CONFIGURED = !!(
   DANA_CONFIG.merchantId
 );
 
-// Log configuration status
-if (!IS_DANA_CONFIGURED) {
-  logger.warn('Dana payment is not properly configured. Set DANA_API_KEY, DANA_API_SECRET, and DANA_MERCHANT_ID environment variables.');
-} else {
-  logger.info('Dana payment is configured for', { environment: DANA_CONFIG.environment });
-}
-
 // Token package mapping 
 export const TOKEN_PACKAGES = {
   'basic': { tokens: 100000, tier: 'Pioneer', price: 75000 },
