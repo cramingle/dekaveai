@@ -71,8 +71,8 @@ export async function createDanaPayment(
     // Now we'll call our API route to create the payment instead of doing it client-side
     const response = await fetch(
       typeof window === 'undefined' 
-        ? getUrl('/api/payments/dana/create')
-        : '/api/payments/dana/create',
+        ? getUrl('/api/payment')
+        : '/api/payment',
       {
         method: 'POST',
         headers: {

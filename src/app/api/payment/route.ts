@@ -23,7 +23,11 @@ export async function POST(request: NextRequest) {
     // Check if Dana is configured
     if (!IS_DANA_CONFIGURED) {
       logger.error('Dana payment is not configured', {
-        IS_DANA_CONFIGURED
+        IS_DANA_CONFIGURED,
+        DANA_ENVIRONMENT: process.env.NEXT_PUBLIC_DANA_ENVIRONMENT,
+        DANA_API_KEY: process.env.DANA_API_KEY ? '✓ Set' : '✗ Missing',
+        DANA_API_SECRET: process.env.DANA_API_SECRET ? '✓ Set' : '✗ Missing',
+        DANA_MERCHANT_ID: process.env.DANA_MERCHANT_ID ? '✓ Set' : '✗ Missing'
       });
       return NextResponse.json(
         { error: 'Payment system is not configured' },

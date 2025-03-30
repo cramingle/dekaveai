@@ -22,6 +22,19 @@ export const DANA_API_KEY = process.env.DANA_API_KEY;
 export const DANA_API_SECRET = process.env.DANA_API_SECRET;
 export const DANA_MERCHANT_ID = process.env.DANA_MERCHANT_ID;
 
+// Log environment status on server-side only (to avoid client-side logs)
+if (typeof window === 'undefined') {
+  console.log('Environment configuration loaded:', {
+    NODE_ENV: process.env.NODE_ENV,
+    DANA_ENABLED,
+    DANA_ENVIRONMENT,
+    BASE_URL,
+    DANA_API_KEY: DANA_API_KEY ? '✓ Set' : '✗ Missing',
+    DANA_API_SECRET: DANA_API_SECRET ? '✓ Set' : '✗ Missing',
+    DANA_MERCHANT_ID: DANA_MERCHANT_ID ? '✓ Set' : '✗ Missing',
+  });
+}
+
 // Environment
 export const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 export const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
