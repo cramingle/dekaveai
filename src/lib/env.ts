@@ -4,7 +4,8 @@
 // Base URL for the application
 export const BASE_URL = 
   process.env.NEXTAUTH_URL || 
-  (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
+  process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
+  (typeof window !== 'undefined' ? window.location.origin : 'https://dekaveai.vercel.app');
 
 // NextAuth
 export const NEXTAUTH_URL = process.env.NEXTAUTH_URL;
