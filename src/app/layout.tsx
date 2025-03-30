@@ -14,8 +14,8 @@ const inter = Inter({ subsets: ['latin'] });
 
 // Create a metadata object that can be used on the client side
 const metadataValues = {
-  title: 'dekaveAI - AI-Powered Product Ad Generator',
-  description: 'Transform product photos into stunning professional ads and marketing materials with AI.',
+  title: 'dekaveAI - Product Ad Generator',
+  description: 'Transform product photos into stunning professional ads and marketing materials.',
   keywords: 'AI, ad generator, marketing materials, product photos, advertising',
   siteUrl: 'https://dekaveai.vercel.app',
   ogImage: 'https://dekaveai.vercel.app/og-image.png',

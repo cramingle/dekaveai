@@ -1,11 +1,11 @@
-# dekaveAI - AI-Powered Product Ad Generator
+# dekaveAI - Product Ad Generator
 
 A Next.js application that uses OpenAI's latest models to transform product photos into professional marketing ads.
 
 ## Features
 
 - 🖼️ Upload product images and generate professional advertisements
-- 🤖 AI-powered ad generation using OpenAI's DALL-E and GPT models
+- 🤖 Ad generation using OpenAI's DALL-E and GPT models
 - 💰 Token-based pricing model with HD/Standard quality options
 - 📱 Responsive UI designed for desktop and mobile
 - 🔒 Google authentication integration
