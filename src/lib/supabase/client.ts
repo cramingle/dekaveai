@@ -3,7 +3,7 @@ import { env } from '@/lib/env';
 
 export const createClient = () => {
   return createBrowserClient(
-    env.SUPABASE_URL!,
-    env.SUPABASE_ANON_KEY!
+    env.NEXT_PUBLIC_SUPABASE_URL,
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   );
 }; 
