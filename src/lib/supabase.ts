@@ -179,7 +179,7 @@ export async function storeConversationContext(userId: string, context: string):
 /**
  * Get user conversation context
  */
-export async function getConversationContext(userId: string): Promise<string | null> {
+export async function getUserConversation(userId: string): Promise<string | null> {
   try {
     const { data, error } = await supabase
       .from('users')
@@ -188,14 +188,39 @@ export async function getConversationContext(userId: string): Promise<string | n
       .single();
       
     if (error) {
-      console.error('Error getting conversation context:', error);
+      console.error('Error getting user conversation:', error);
       return null;
     }
     
     return data?.conversation_context || null;
   } catch (error) {
-    console.error('Error getting conversation context:', error);
+    console.error('Error getting user conversation:', error);
     return null;
+  }
+}
+
+/**
+ * Save user conversation context
+ */
+export async function saveUserConversation(userId: string, context: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('users')
+      .update({ 
+        conversation_context: context,
+        conversation_last_used: new Date().toISOString()
+      })
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Error saving user conversation:', error);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error saving user conversation:', error);
+    return false;
   }
 }
 

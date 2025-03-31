@@ -1,18 +1,66 @@
 // Environment variables helper file
 // This file centralizes all environment variable access to ensure consistency
 
+import { z } from 'zod';
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  VERCEL_ENV: z.enum(['development', 'preview', 'production']).default('development'),
+  
+  // Database
+  DATABASE_URL: z.string().optional(),
+  
+  // Supabase
+  SUPABASE_URL: z.string().min(1),
+  SUPABASE_ANON_KEY: z.string().min(1),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  
+  // Stripe
+  STRIPE_SECRET_KEY: z.string().min(1),
+  STRIPE_WEBHOOK_SECRET: z.string().min(1),
+  STRIPE_PRICE_ID: z.string().min(1),
+  
+  // OpenAI
+  OPENAI_API_KEY: z.string().min(1),
+  
+  // Other
+  REPLICATE_API_TOKEN: z.string().min(1),
+  GOOGLE_CLIENT_ID: z.string().min(1),
+  GOOGLE_CLIENT_SECRET: z.string().min(1),
+});
+
+export const env = envSchema.parse({
+  NODE_ENV: process.env.NODE_ENV,
+  VERCEL_ENV: process.env.VERCEL_ENV,
+  
+  // Database
+  DATABASE_URL: process.env.DATABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('supabase', 'postgres'),
+  
+  // Supabase
+  SUPABASE_URL: process.env.SUPABASE_URL,
+  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  
+  // Stripe
+  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+  STRIPE_PRICE_ID: process.env.STRIPE_PRICE_ID,
+  
+  // OpenAI
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  
+  // Other
+  REPLICATE_API_TOKEN: process.env.REPLICATE_API_TOKEN,
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+});
+
 // Base URL for the application
 export const BASE_URL = (() => {
-  // Check if we're in a weird state where BASE_URL would be "REQUIRED"
-  // This is happening in certain Vercel serverless functions
+  // Check if we're in production
   if (process.env.NODE_ENV === 'production') {
     // Hard-code the production URL since we know what it is
     return 'https://dekaveai.vercel.app';
-  }
-
-  // For explicitly set NEXTAUTH_URL (only as fallback)
-  if (process.env.NEXTAUTH_URL) {
-    return process.env.NEXTAUTH_URL;
   }
   
   // For Vercel environments
@@ -33,18 +81,8 @@ export const BASE_URL = (() => {
 export const NEXTAUTH_URL = process.env.NEXTAUTH_URL;
 export const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET;
 
-// Supabase
-export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-export const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-export const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-// Database
-export const DATABASE_URL = process.env.DATABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('supabase', 'postgres');
-
 // Stripe Configuration
-export const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 export const STRIPE_PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-export const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
 // Stripe Price IDs for different packages
 export const STRIPE_PRICE_IDS = {
@@ -59,7 +97,7 @@ if (typeof window === 'undefined') {
   console.log('Environment configuration loaded:', {
     NODE_ENV: process.env.NODE_ENV,
     BASE_URL,
-    DATABASE_URL: DATABASE_URL ? '✓ Set' : '✗ Missing',
+    DATABASE_URL: env.DATABASE_URL ? '✓ Set' : '✗ Missing',
   });
 }
 
@@ -79,35 +117,14 @@ export function getUrl(path: string): string {
   return `${baseUrl}${normalizedPath}`;
 }
 
-// Export an env object for structured access
-export const env = {
-  BASE_URL,
-  NEXTAUTH_URL,
-  NEXTAUTH_SECRET,
-  SUPABASE_URL,
-  SUPABASE_ANON_KEY,
-  SUPABASE_SERVICE_KEY,
-  DATABASE_URL,
-  STRIPE_SECRET_KEY,
-  STRIPE_PUBLISHABLE_KEY,
-  STRIPE_WEBHOOK_SECRET,
-  IS_PRODUCTION,
-  IS_DEVELOPMENT
-};
-
 // Export default object for easier importing
 export default {
   BASE_URL,
-  NEXTAUTH_URL,
-  NEXTAUTH_SECRET,
-  SUPABASE_URL,
-  SUPABASE_ANON_KEY,
-  SUPABASE_SERVICE_KEY,
-  DATABASE_URL,
-  STRIPE_SECRET_KEY,
+  DATABASE_URL: env.DATABASE_URL,
   STRIPE_PUBLISHABLE_KEY,
-  STRIPE_WEBHOOK_SECRET,
+  STRIPE_PRICE_IDS,
   IS_PRODUCTION,
   IS_DEVELOPMENT,
-  getUrl
+  getUrl,
+  env
 }; 

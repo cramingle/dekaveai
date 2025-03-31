@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processRequest } from '@/lib/ai-processing';
-import { getServerSession } from 'next-auth';
-import { authOptions, getUserConversation, saveUserConversation } from '@/lib/auth';
-import { updateUserTokens, getUserTokens } from '@/lib/supabase';
+import { updateUserTokens, getUserTokens, getUserConversation, saveUserConversation } from '@/lib/supabase';
 import logger from '@/lib/logger';
 import { trackAdGeneration, trackAdGenerationError } from '@/lib/analytics';
+import { createClient } from '@/lib/supabase/server';
+import { cookies } from 'next/headers';
 
 // Rate limiting setup
 const rateLimit = 10; // Max requests per minute
@@ -26,14 +26,17 @@ setInterval(() => {
 
 export async function POST(req: NextRequest) {
   try {
-    // Get the current user
-    const session = await getServerSession(authOptions);
-    
+    // Get Supabase client and session
+    const cookieStore = await cookies();
+    const supabase = createClient(cookieStore);
+    const { data: { session } } = await supabase.auth.getSession();
+
+    // Check if user is authenticated
     if (!session?.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    const userId = session.user.id as string;
+    const userId = session.user.id;
     
     if (!userId) {
       return NextResponse.json({ error: 'User ID not found in session' }, { status: 401 });

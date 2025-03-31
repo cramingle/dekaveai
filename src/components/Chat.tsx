@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@/lib/auth';
 import { motion } from 'framer-motion';
 import { LoadingSpinner } from './LoadingSpinner';
 
@@ -26,17 +26,17 @@ interface ChatProps {
 }
 
 export function Chat({ onSubmit, messages, isLoading, resetConversation }: ChatProps) {
-  const { data: session } = useSession();
+  const { user: currentUser } = useAuth();
   const [prompt, setPrompt] = useState('');
   const [hasStoredContext, setHasStoredContext] = useState(false);
   
   useEffect(() => {
     // Check if user has stored conversation - use type assertion
-    const user = session?.user as ExtendedUser | undefined;
+    const user = currentUser as ExtendedUser | undefined;
     if (user?.hasStoredConversation) {
       setHasStoredContext(true);
     }
-  }, [session]);
+  }, [currentUser]);
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

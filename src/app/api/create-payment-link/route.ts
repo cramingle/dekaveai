@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { rateLimit } from '@/lib/rate-limit';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { createClient } from '@/lib/supabase/server';
+import { cookies } from 'next/headers';
 
 declare function mcp_stripe_create_payment_link(params: {
   price: string;
@@ -25,8 +25,12 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get session and verify authentication
-    const session = await getServerSession(authOptions);
+    // Get Supabase client
+    const cookieStore = await cookies();
+    const supabase = createClient(cookieStore);
+    
+    // Verify authentication
+    const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -42,6 +46,14 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
+      );
+    }
+
+    // Verify that the authenticated user matches the requested userId
+    if (session.user.id !== userId) {
+      return NextResponse.json(
+        { error: 'User ID mismatch' },
+        { status: 403 }
       );
     }
 

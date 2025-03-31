@@ -7,125 +7,30 @@ import {
   useEffect,
   ReactNode
 } from 'react';
-import { signIn, signOut, useSession } from 'next-auth/react';
-import { supabase } from './supabase';
-import { getConversationContext, storeConversationContext } from './supabase';
-import type { NextAuthOptions } from 'next-auth';
-import GoogleProvider from 'next-auth/providers/google';
-import type { DefaultSession } from 'next-auth';
+import { createClient } from '@/lib/supabase/client';
 import { trackEvent, EventType } from '@/lib/analytics';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 
 // Add interface for extended user
 interface ExtendedUser {
-  id?: string;
+  id: string;
+  email: string;
   tokens?: number;
   tier?: 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord';
   tokens_expiry_date?: string;
   hasStoredConversation?: boolean;
   conversationLastUsed?: string;
   hasLoggedInBefore: boolean;
-  [key: string]: any; // For other properties
+  token?: string;
 }
-
-// Define NextAuth configuration
-export const authOptions: NextAuthOptions = {
-  providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      authorization: {
-        params: {
-          prompt: "consent",
-          access_type: "offline",
-          response_type: "code"
-        }
-      }
-    }),
-  ],
-  session: {
-    strategy: "jwt",
-  },
-  callbacks: {
-    async session({ session, token }) {
-      // Add user ID from token to session
-      if (token.sub && session.user) {
-        session.user.id = token.sub;
-      }
-      
-      // Populate the session with user data from Supabase
-      if (session.user?.id) {
-        try {
-          const { data: userData } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          
-          if (userData) {
-            // Use type assertion to avoid TypeScript errors
-            const extendedUser = session.user as ExtendedUser;
-            extendedUser.tokens = userData.tokens || 0;
-            extendedUser.tier = userData.tier || 'Pioneer';
-            extendedUser.tokens_expiry_date = userData.tokens_expiry_date;
-            extendedUser.hasLoggedInBefore = ((userData.tokens ?? 0) > 0 || !!userData.tokens_expiry_date);
-            
-            // Add conversation context info
-            if (userData.conversation_last_used) {
-              extendedUser.hasStoredConversation = true;
-              extendedUser.conversationLastUsed = userData.conversation_last_used;
-            } else {
-              extendedUser.hasStoredConversation = false;
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching user data:', error);
-        }
-      }
-      
-      return session;
-    },
-    async jwt({ token, user, account }) {
-      // If new sign in, save user to Supabase
-      if (account && user) {
-        try {
-          const { data, error } = await supabase
-            .from('users')
-            .upsert({
-              id: user.id,
-              email: user.email,
-              provider: account.provider,
-              created_at: new Date().toISOString(),
-              tokens: 0, // No default tokens - users must purchase
-              tier: 'Pioneer'
-            }, {
-              onConflict: 'id',
-              ignoreDuplicates: false,
-            });
-          
-          if (error) {
-            console.error('Error saving user to Supabase:', error);
-          }
-        } catch (error) {
-          console.error('Error in sign in flow:', error);
-        }
-      }
-      return token;
-    }
-  },
-  pages: {
-    signIn: '/login',
-    error: '/login',
-  },
-  secret: process.env.NEXTAUTH_SECRET,
-};
 
 // Define the auth context types
 type UserAuth = {
   isAuthenticated: boolean;
-  user: any | null;
+  user: ExtendedUser | null;
   tokens: number;
   tokensExpiryDate?: string;
-  tier: 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord'; // Specific tier values
+  tier: 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord';
   isLoading: boolean;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
@@ -139,83 +44,161 @@ const AuthContext = createContext<UserAuth | undefined>(undefined);
 
 // Provider component
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { data: session, status } = useSession();
+  const supabase = createClient();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [user, setUser] = useState<any | null>(null);
+  const [user, setUser] = useState<ExtendedUser | null>(null);
   const [tokens, setTokens] = useState<number>(0);
   const [tokensExpiryDate, setTokensExpiryDate] = useState<string | undefined>(undefined);
-  const [tier, setTier] = useState<string>('Pioneer');
-  const isLoading = status === 'loading';
+  const [tier, setTier] = useState<'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord'>('Pioneer');
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Update state when session changes
+  // Initialize auth state
   useEffect(() => {
-    if (session?.user) {
-      setIsAuthenticated(true);
-      setUser({
-        ...session.user,
-        hasLoggedInBefore: ((session.user.tokens ?? 0) > 0 || !!session.user.tokens_expiry_date)
-      });
-      setTokens(session.user.tokens || 0);
-      setTokensExpiryDate(session.user.tokens_expiry_date);
-      setTier(session.user.tier || 'Pioneer');
-    } else {
-      // Reset auth state if no session
-      setIsAuthenticated(false);
-      setUser(null);
-      setTokens(0);
-      setTokensExpiryDate(undefined);
-      setTier('Pioneer');
-    }
-  }, [session]);
+    const initAuth = async () => {
+      try {
+        // Get current session
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.user) {
+          // Get user data from database
+          const { data: userData } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+          if (userData) {
+            setUser({
+              id: session.user.id,
+              email: session.user.email!,
+              tokens: userData.tokens || 0,
+              tier: userData.tier || 'Pioneer',
+              tokens_expiry_date: userData.tokens_expiry_date,
+              hasLoggedInBefore: ((userData.tokens ?? 0) > 0 || !!userData.tokens_expiry_date),
+              hasStoredConversation: !!userData.conversation_last_used,
+              conversationLastUsed: userData.conversation_last_used,
+              token: session.access_token
+            });
+            setTokens(userData.tokens || 0);
+            setTokensExpiryDate(userData.tokens_expiry_date);
+            setTier(userData.tier || 'Pioneer');
+            setIsAuthenticated(true);
+          }
+        }
+      } catch (error) {
+        console.error('Error initializing auth:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initAuth();
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event: AuthChangeEvent, session: Session | null) => {
+        if (event === 'SIGNED_IN' && session?.user) {
+          // Get user data from database
+          const { data: userData } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+          if (userData) {
+            setUser({
+              id: session.user.id,
+              email: session.user.email!,
+              tokens: userData.tokens || 0,
+              tier: userData.tier || 'Pioneer',
+              tokens_expiry_date: userData.tokens_expiry_date,
+              hasLoggedInBefore: ((userData.tokens ?? 0) > 0 || !!userData.tokens_expiry_date),
+              hasStoredConversation: !!userData.conversation_last_used,
+              conversationLastUsed: userData.conversation_last_used,
+              token: session.access_token
+            });
+            setTokens(userData.tokens || 0);
+            setTokensExpiryDate(userData.tokens_expiry_date);
+            setTier(userData.tier || 'Pioneer');
+            setIsAuthenticated(true);
+          }
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          setTokens(0);
+          setTokensExpiryDate(undefined);
+          setTier('Pioneer');
+          setIsAuthenticated(false);
+        }
+      }
+    );
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   // Function to sign in with Google
   const signInWithGoogle = async () => {
-    // Track sign in attempt
-    trackEvent(EventType.SIGN_IN, {
-      method: 'google',
-      timestamp: new Date().toISOString()
-    });
-    
-    await signIn('google', { callbackUrl: '/api/checkout?newUser=true' });
+    try {
+      // Track sign in attempt
+      trackEvent(EventType.SIGN_IN, {
+        method: 'google',
+        timestamp: new Date().toISOString()
+      });
+      
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/api/checkout?newUser=true`
+        }
+      });
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error signing in with Google:', error);
+      throw error;
+    }
   };
 
   // Function to log out
   const logout = async () => {
-    // Track logout
-    trackEvent(EventType.SIGN_IN, {
-      action: 'logout',
-      userId: user?.id,
-      timestamp: new Date().toISOString()
-    });
-    
-    await signOut({ callbackUrl: '/' });
+    try {
+      // Track logout
+      trackEvent(EventType.SIGN_IN, {
+        action: 'logout',
+        userId: user?.id,
+        timestamp: new Date().toISOString()
+      });
+      
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error signing out:', error);
+      throw error;
+    }
   };
 
   // Function to refresh token count
   const refreshTokenCount = async () => {
-    if (!session?.user?.id) return;
+    if (!user?.id) return;
     
     try {
-      const { data, error } = await supabase
+      const { data: userData } = await supabase
         .from('users')
         .select('tokens, tier, tokens_expiry_date')
-        .eq('id', session.user.id)
+        .eq('id', user.id)
         .single();
-      
-      if (!error && data) {
-        setTokens(data.tokens);
-        setTokensExpiryDate(data.tokens_expiry_date);
-        setTier(data.tier);
-        
-        // Track token refresh
-        trackEvent(EventType.TOKEN_USAGE, {
-          action: 'refresh',
-          userId: session.user.id,
-          tokens: data.tokens,
-          tier: data.tier,
-          expiryDate: data.tokens_expiry_date,
-          timestamp: new Date().toISOString()
-        });
+
+      if (userData) {
+        setTokens(userData.tokens || 0);
+        setTier(userData.tier || 'Pioneer');
+        setTokensExpiryDate(userData.tokens_expiry_date);
+        setUser(prev => prev ? {
+          ...prev,
+          tokens: userData.tokens || 0,
+          tier: userData.tier || 'Pioneer',
+          tokens_expiry_date: userData.tokens_expiry_date
+        } : null);
       }
     } catch (error) {
       console.error('Error refreshing token count:', error);
@@ -224,126 +207,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Function to buy tokens
   const buyTokens = async (packageId: string) => {
-    if (!session?.user?.id) {
+    if (!user?.id) {
       return { success: false, error: 'Not authenticated' };
     }
-    
+
     try {
-      // Token package definitions
-      const tokenPackages = [
-        { id: 'basic', tokens: 100000, tier: 'Pioneer' },
-        { id: 'value', tokens: 250000, tier: 'Voyager' },
-        { id: 'pro', tokens: 600000, tier: 'Dominator' },
-        { id: 'max', tokens: 1000000, tier: 'Overlord' },
-      ];
-      
-      // Handle token subtraction
-      if (packageId.startsWith('subtract-')) {
-        const amount = parseInt(packageId.replace('subtract-', '')) || 10000;
-        const newTokenCount = Math.max(0, tokens - amount);
-        
-        // Track token usage
-        trackEvent(EventType.TOKEN_USAGE, {
-          userId: session.user.id,
-          action: 'subtract',
-          amount: amount,
-          newBalance: newTokenCount,
-          timestamp: new Date().toISOString()
-        });
-        
-        const { error } = await supabase
-          .from('users')
-          .update({
-            tokens: newTokenCount,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', session.user.id);
-        
-        if (error) throw error;
-        
-        // Update local state
-        setTokens(newTokenCount);
-        
-        return { success: true };
-      }
-      
-      const selectedPackage = tokenPackages.find(pkg => pkg.id === packageId);
-      
-      if (!selectedPackage) {
-        return { success: false, error: 'Invalid package' };
-      }
-      
-      // Track token purchase
-      trackEvent(EventType.TOKEN_PURCHASE, {
-        userId: session.user.id,
-        packageId: packageId,
-        tokens: selectedPackage.tokens,
-        tier: selectedPackage.tier,
-        action: 'direct_purchase',
-        timestamp: new Date().toISOString()
+      const response = await fetch('/api/create-payment-link', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user.token}`
+        },
+        body: JSON.stringify({
+          packageId,
+          email: user.email,
+          userId: user.id
+        }),
       });
-      
-      // Create expiry date (28 days from now)
-      const expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + 28);
-      
-      // Here, you would integrate with a payment processor
-      // For now, we'll just update the tokens directly
-      
-      const { error } = await supabase
-        .from('users')
-        .update({
-          tokens: tokens + selectedPackage.tokens,
-          tokens_expiry_date: expiryDate.toISOString(),
-          tier: selectedPackage.tier,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', session.user.id);
-      
-      if (error) throw error;
-      
-      // Update local state
-      setTokens(tokens + selectedPackage.tokens);
-      setTokensExpiryDate(expiryDate.toISOString());
-      setTier(selectedPackage.tier);
-      
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create payment link');
+      }
+
+      // Redirect to payment URL
+      window.location.href = data.url;
       return { success: true };
     } catch (error) {
       console.error('Error buying tokens:', error);
-      
-      // Track error
-      trackEvent(EventType.TOKEN_PURCHASE, {
-        userId: session?.user?.id,
-        packageId: packageId,
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString()
-      });
-      
-      return { success: false, error: 'Failed to purchase tokens' };
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'An error occurred'
+      };
     }
   };
 
-  const value = {
-    isAuthenticated,
-    user,
-    tokens,
-    tokensExpiryDate,
-    tier: (tier as 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord'),
-    isLoading,
-    signInWithGoogle,
-    logout,
-    refreshTokenCount,
-    buyTokens,
-    tokensExpired: () => {
-      if (!tokensExpiryDate) return false;
-      const expiryDate = new Date(tokensExpiryDate);
-      const now = new Date();
-      return expiryDate < now;
-    },
+  // Function to check if tokens are expired
+  const tokensExpired = () => {
+    if (!tokensExpiryDate) return false;
+    return new Date(tokensExpiryDate) < new Date();
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{
+      isAuthenticated,
+      user,
+      tokens,
+      tokensExpiryDate,
+      tier,
+      isLoading,
+      signInWithGoogle,
+      logout,
+      refreshTokenCount,
+      buyTokens,
+      tokensExpired
+    }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 // Hook to use auth context
@@ -353,23 +275,4 @@ export const useAuth = () => {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-};
-
-// Export these functions for use in the conversation context management
-export async function getUserConversation(userId: string) {
-  try {
-    return await getConversationContext(userId);
-  } catch (error) {
-    console.error('Error getting user conversation:', error);
-    return null;
-  }
-}
-
-export async function saveUserConversation(userId: string, contextData: string) {
-  try {
-    return await storeConversationContext(userId, contextData);
-  } catch (error) {
-    console.error('Error saving user conversation:', error);
-    return false;
-  }
-} 
+}; 

@@ -78,6 +78,7 @@ export function TokenTopup({ onClose }: TokenTopupProps) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user.token}`
         },
         body: JSON.stringify({
           priceId: selectedPkg.priceId,
