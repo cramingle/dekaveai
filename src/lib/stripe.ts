@@ -1,3 +1,5 @@
+'use server';
+
 // =========================================================
 // STRIPE IMPLEMENTATION DISABLED
 // This file will be replaced with Dana payment implementation
