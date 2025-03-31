@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import logger from '@/lib/logger';
 import { trackEvent, EventType } from '@/lib/analytics';
+import { TOKEN_PACKAGES } from '@/lib/stripe/constants';
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,13 +29,20 @@ export async function GET(request: NextRequest) {
     const successUrl = `${origin}/success?session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${origin}/`;
     
+    const packageDetails = TOKEN_PACKAGES[packageId as keyof typeof TOKEN_PACKAGES];
+    if (!packageDetails) {
+      logger.error('Invalid package selected');
+      return NextResponse.redirect(new URL('/', request.url));
+    }
+    
     // Create a checkout session
     const checkoutUrl = await createCheckoutSession(
       email,
       successUrl,
       cancelUrl,
       userId as string,
-      packageId
+      packageId,
+      packageDetails
     );
     
     if (!checkoutUrl) {
@@ -70,5 +78,53 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     logger.error('Error in checkout route:', error);
     return NextResponse.redirect(new URL('/', request.url));
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const { email, userId, packageId } = await request.json();
+
+    if (!email || !userId || !packageId) {
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      );
+    }
+
+    const packageDetails = TOKEN_PACKAGES[packageId as keyof typeof TOKEN_PACKAGES];
+    if (!packageDetails) {
+      return NextResponse.json(
+        { error: 'Invalid package selected' },
+        { status: 400 }
+      );
+    }
+
+    const successUrl = `${request.headers.get('origin')}/success?session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${request.headers.get('origin')}/cancel`;
+
+    const checkoutUrl = await createCheckoutSession(
+      email,
+      successUrl,
+      cancelUrl,
+      userId,
+      packageId,
+      packageDetails
+    );
+
+    if (!checkoutUrl) {
+      return NextResponse.json(
+        { error: 'Failed to create checkout session' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ url: checkoutUrl });
+  } catch (error) {
+    console.error('Checkout error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 } 

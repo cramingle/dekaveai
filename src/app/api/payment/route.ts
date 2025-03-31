@@ -52,10 +52,10 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { email, userId, packageId = 'basic' } = body;
+    const { email, userId, packageId } = body;
 
     // Validate required fields
-    if (!email || !userId) {
+    if (!email || !userId || !packageId) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
     // Create success and cancel URLs
     const origin = request.headers.get('origin') || 'http://localhost:3000';
     const successUrl = `${origin}/success?session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${origin}/`;
+    const cancelUrl = `${origin}/cancel`;
       
     // Create Stripe checkout session
     const checkoutUrl = await createCheckoutSession(
@@ -82,7 +82,8 @@ export async function POST(request: NextRequest) {
       successUrl,
       cancelUrl,
       userId,
-      packageId
+      packageId,
+      packageDetails
     );
 
     if (!checkoutUrl) {

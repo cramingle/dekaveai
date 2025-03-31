@@ -8,6 +8,7 @@
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import type { TokenPackage } from './stripe/constants';
 
 // Initialize Stripe
 // const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
@@ -17,6 +18,7 @@ export const IS_PAYMENT_ENABLED = true;
 export const PAYMENT_PROVIDER = 'stripe';
 export const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
 
+// MCP Stripe function declarations
 declare function mcp_stripe_create_customer(params: {
   name: string;
   email?: string;
@@ -39,31 +41,20 @@ declare function mcp_stripe_list_payment_intents(params: {
   }>;
 }>;
 
-export type TokenPackage = {
-  id: string;
-  name: string;
-  tokens: number;
-  price: number;
-  tier: 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord';
-  priceId: string;
-};
-
+// Server-side functions only
 export async function createOrRetrieveCustomer(userId: string, email: string, name: string) {
   try {
-    // Check if user already has a Stripe customer ID
     const user = await db.select().from(users).where(eq(users.id, userId)).limit(1).then(rows => rows[0]);
 
     if (user?.stripeCustomerId) {
       return user.stripeCustomerId;
     }
 
-    // Create new Stripe customer
     const customer = await mcp_stripe_create_customer({
       name,
       email,
     });
 
-    // Update user with Stripe customer ID
     await db.update(users)
       .set({ stripeCustomerId: customer.id })
       .where(eq(users.id, userId));
@@ -80,19 +71,16 @@ export async function createCheckoutSession(
   successUrl: string,
   cancelUrl: string,
   userId: string,
-  packageId: string
+  packageId: string,
+  packageDetails: TokenPackage
 ) {
   try {
-    // Create or retrieve customer
     const customerId = await createOrRetrieveCustomer(userId, email, email);
-
-    // Get package details
-    const packageDetails = TOKEN_PACKAGES[packageId as keyof typeof TOKEN_PACKAGES];
+    
     if (!packageDetails) {
       throw new Error('Invalid package selected');
     }
 
-    // Create payment link
     const paymentLink = await mcp_stripe_create_payment_link({
       price: packageDetails.priceId,
       quantity: 1
@@ -107,12 +95,10 @@ export async function createCheckoutSession(
 
 export async function verifyPayment(sessionId: string): Promise<boolean> {
   try {
-    // Get payment details using sessionId
     const payments = await mcp_stripe_list_payment_intents({
       limit: 1
     });
 
-    // Check if payment exists and is successful
     return payments.data.some(payment => 
       payment.id === sessionId && payment.status === 'succeeded'
     );
@@ -126,12 +112,12 @@ export async function getPaymentHistory(customerId: string) {
   try {
     const paymentIntents = await mcp_stripe_list_payment_intents({
       customer: customerId,
-      limit: 10 // Get last 10 payments
+      limit: 10
     });
 
     return paymentIntents.data.map(payment => ({
       id: payment.id,
-      amount: payment.amount / 100, // Convert cents to dollars
+      amount: payment.amount / 100,
       status: payment.status,
       date: new Date(payment.created * 1000).toISOString()
     }));
