@@ -27,9 +27,9 @@ const envSchema = z.object({
   // Vercel Blob Storage - Optional for now
   BLOB_READ_WRITE_TOKEN: z.string().optional(),
   
-  // Other
-  GOOGLE_CLIENT_ID: z.string().min(1),
-  GOOGLE_CLIENT_SECRET: z.string().min(1),
+  // Google Auth - Optional since we're using Supabase Auth
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
 });
 
 export const env = envSchema.parse({
@@ -56,7 +56,7 @@ export const env = envSchema.parse({
   // Vercel Blob Storage
   BLOB_READ_WRITE_TOKEN: process.env.BLOB_READ_WRITE_TOKEN,
   
-  // Other
+  // Google Auth - Optional since we're using Supabase Auth
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
 });
