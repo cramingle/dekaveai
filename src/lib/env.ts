@@ -3,6 +3,14 @@
 
 import { z } from 'zod';
 
+// Debug logging for environment variables
+if (typeof window === 'undefined') {
+  console.log('Loading environment variables...');
+  console.log('OPENAI_API_KEY present:', !!process.env.OPENAI_API_KEY);
+  console.log('NODE_ENV:', process.env.NODE_ENV);
+  console.log('VERCEL_ENV:', process.env.VERCEL_ENV);
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   VERCEL_ENV: z.enum(['development', 'preview', 'production']).default('development'),
