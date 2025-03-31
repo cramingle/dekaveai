@@ -20,7 +20,8 @@ export enum EventType {
   QUALITY_SELECTION = 'quality_selection',
   IMAGE_UPLOAD = 'image_upload',
   PAGE_VIEW = 'page_view',
-  PAYMENT_REDIRECT = 'payment_redirect'
+  PAYMENT_REDIRECT = 'payment_redirect',
+  PAYMENT_VERIFICATION = 'payment_verification'
 }
 
 // Track events using Vercel Analytics

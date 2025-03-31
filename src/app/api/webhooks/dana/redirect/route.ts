@@ -1,66 +1,110 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getUrl } from '@/lib/env';
 import logger from '@/lib/logger';
 import { trackEvent, EventType } from '@/lib/analytics';
-import { getUrl } from '@/lib/env';
+import { db } from '@/lib/db';
+import { transactions } from '@/lib/db/schema';
+import { sql } from 'drizzle-orm';
 
 /**
  * Dana Payment Redirect Handler
  * 
  * Users are redirected to this endpoint after completing (or canceling) a Dana payment.
- * This endpoint processes the redirect parameters and redirects the user to the appropriate page.
+ * This handles redirecting them to the appropriate page based on the payment result.
  */
-export async function GET(req: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
     // Get query parameters
-    const searchParams = req.nextUrl.searchParams;
+    const searchParams = request.nextUrl.searchParams;
     const status = searchParams.get('status');
-    const merchantOrderNo = searchParams.get('merchantOrderNo') || searchParams.get('transaction_id');
-    const errorCode = searchParams.get('errorCode') || searchParams.get('error_code');
+    const errorCode = searchParams.get('error_code');
+    const partnerReferenceNo = searchParams.get('partner_reference_no');
+    const referenceNo = searchParams.get('reference_no');
     
-    logger.info('Dana payment redirect received', { 
-      status, 
-      merchantOrderNo,
+    // Log the redirect event
+    logger.info('Dana payment redirect received', {
+      status,
       errorCode,
+      partnerReferenceNo,
+      referenceNo,
       allParams: Object.fromEntries(searchParams.entries())
     });
-
-    // Track the redirect event
+    
+    // Track redirect event
     trackEvent(EventType.PAYMENT_REDIRECT, {
       status,
-      merchantOrderNo,
       errorCode,
+      partnerReferenceNo,
+      referenceNo,
       timestamp: new Date().toISOString()
     });
-
-    // Determine redirect based on status
-    if (status === 'SUCCESS' || status === 'COMPLETED') {
-      // Redirect to success page with transaction ID
-      return NextResponse.redirect(getUrl(`/success?transaction_id=${merchantOrderNo}`));
-    } else {
-      // Redirect to homepage with error parameter
-      let errorMessage = 'Payment canceled or failed';
-      if (errorCode) {
-        // Map error codes to user-friendly messages
-        switch(errorCode) {
-          case 'PAYMENT_EXPIRED':
-            errorMessage = 'Payment session expired';
-            break;
-          case 'PAYMENT_CANCELLED':
-            errorMessage = 'Payment was cancelled';
-            break;
-          case 'INSUFFICIENT_BALANCE':
-            errorMessage = 'Insufficient balance';
-            break;
-          default:
-            errorMessage = `Payment failed: ${errorCode}`;
+    
+    // Success case - redirect to success page
+    if (status === 'SUCCESS') {
+      // Attempt to find transaction to include in redirect
+      if (partnerReferenceNo) {
+        try {
+          const transaction = await db
+            .select()
+            .from(transactions)
+            .where(sql`metadata->>'partnerReferenceNo' = ${partnerReferenceNo}`)
+            .limit(1)
+            .then(rows => rows[0]);
+          
+          if (transaction) {
+            // Redirect to success page with transaction ID
+            return NextResponse.redirect(getUrl(`/success?transactionId=${transaction.id}`));
+          }
+        } catch (dbError) {
+          logger.error('Error fetching transaction for success redirect', { 
+            error: dbError, 
+            partnerReferenceNo
+          });
+          // Fall through to generic success if DB query fails
         }
       }
       
-      return NextResponse.redirect(getUrl(`/?error=${encodeURIComponent(errorMessage)}`));
+      // Generic success redirect if no transaction found
+      return NextResponse.redirect(getUrl('/success'));
     }
+    
+    // All other cases are treated as errors or cancellations
+    let errorMessage = 'Payment canceled or failed';
+    let severity = 'warning';
+    
+    // Map error codes to user-friendly messages
+    if (errorCode) {
+      switch (errorCode) {
+        case 'PAYMENT_EXPIRED':
+          errorMessage = 'Payment session expired';
+          break;
+        case 'PAYMENT_CANCELLED':
+          errorMessage = 'Payment was cancelled';
+          break;
+        case 'INSUFFICIENT_BALANCE':
+          errorMessage = 'Insufficient balance to complete payment';
+          severity = 'error';
+          break;
+        default:
+          errorMessage = `Payment failed: ${errorCode}`;
+          severity = 'error';
+      }
+    }
+    
+    // Log the error redirect
+    logger.info('Payment redirect error', { 
+      errorCode, 
+      errorMessage, 
+      severity,
+      partnerReferenceNo
+    });
+    
+    // Redirect to home with error message
+    return NextResponse.redirect(
+      getUrl(`/?error=${encodeURIComponent(errorMessage)}&severity=${severity}`)
+    );
   } catch (error) {
-    logger.error('Error processing Dana redirect', { error });
-    // In case of error, redirect to homepage with generic error
+    logger.error('Error processing Dana payment redirect', { error });
     return NextResponse.redirect(getUrl(`/?error=${encodeURIComponent('An error occurred during payment')}`));
   }
 } 

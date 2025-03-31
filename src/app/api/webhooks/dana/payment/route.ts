@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import logger from '@/lib/logger';
 import { updateUserTokens, getUserTokens } from '@/lib/supabase';
 import { TOKEN_PACKAGES } from '@/lib/dana';
-import { DANA_API_SECRET } from '@/lib/env';
+import { DANA_API_SECRET, DANA_CLIENT_SECRET } from '@/lib/env';
 import crypto from 'crypto';
 import { db } from '@/lib/db';
 import { transactions } from '@/lib/db/schema';
@@ -24,61 +24,104 @@ export async function POST(req: NextRequest) {
     
     // Get the request body
     const payload = await req.json();
-    logger.info('Dana payment notification received', { payload });
+    logger.info('Dana payment notification received', { 
+      payload: summarizePayload(payload) 
+    });
 
-    // Verify signature if provided
+    // Verify signature
     const signature = req.headers.get('X-SIGNATURE');
-    if (signature && DANA_API_SECRET) {
-      const calculatedSignature = crypto
-        .createHmac('sha256', DANA_API_SECRET)
-        .update(JSON.stringify(payload))
-        .digest('hex');
-        
-      if (calculatedSignature !== signature) {
+    const timestamp = req.headers.get('X-TIMESTAMP');
+    
+    if (signature && timestamp && DANA_API_SECRET && DANA_CLIENT_SECRET) {
+      // Validate signature according to DANA docs (HMAC-SHA512)
+      const stringPayload = JSON.stringify(payload);
+      const payloadHash = crypto.createHash('sha256')
+        .update(stringPayload)
+        .digest('hex')
+        .toLowerCase();
+      
+      const signatureBase = `POST:/v1.0/debit/notify:${DANA_CLIENT_SECRET}:${payloadHash}:${timestamp}`;
+      
+      const expectedSignature = crypto
+        .createHmac('sha512', DANA_API_SECRET)
+        .update(signatureBase)
+        .digest('base64');
+      
+      if (expectedSignature !== signature) {
         logger.warn('Invalid Dana signature', { 
-          providedSignature: signature,
-          calculatedSignature
+          providedSignature: signature.substring(0, 20) + '...',
+          calculatedSignature: expectedSignature.substring(0, 20) + '...'
         });
+        
         return NextResponse.json(
-          { success: false, message: 'Invalid signature' }, 
+          { responseCode: '5005601', responseMessage: 'Invalid signature' }, 
           { status: 401 }
         );
       }
-    }
-
-    // Extract payment details from the payload
-    // Adjust based on actual DANA QRIS notification structure
-    const {
-      merchantId,
-      merchantOrderNo,
-      acquirementStatus,
-      orderAmount,
-      transactionAmount,
-      acquirementTime
-    } = payload.response || {};
-
-    // Check if payment status is successful (FULL_PAYMENT)
-    if (acquirementStatus !== 'FULL_PAYMENT') {
-      logger.warn('Payment not successful', { 
-        acquirementStatus, 
-        merchantOrderNo 
+      
+      logger.info('Signature validation successful');
+    } else {
+      logger.warn('Missing signature verification data', {
+        hasSignature: !!signature,
+        hasTimestamp: !!timestamp,
+        hasApiSecret: !!DANA_API_SECRET,
+        hasClientSecret: !!DANA_CLIENT_SECRET
       });
-      return NextResponse.json({ success: false, message: 'Payment not successful' });
     }
 
-    // Find the transaction in our database
+    // Extract payment details from the payload according to DANA Finish Notify format
+    const {
+      originalPartnerReferenceNo,
+      originalReferenceNo,
+      merchantId,
+      amount,
+      latestTransactionStatus,
+      transactionStatusDesc,
+      createdTime,
+      finishedTime,
+      additionalInfo
+    } = payload;
+
+    // Check if payment status is successful (00 = Success)
+    if (latestTransactionStatus !== '00') {
+      logger.warn('Payment not successful', { 
+        latestTransactionStatus, 
+        transactionStatusDesc,
+        originalPartnerReferenceNo 
+      });
+      // Return success to DANA even if our payment is not successful
+      // This prevents DANA from retrying the notification
+      return NextResponse.json({ 
+        responseCode: '2005600', 
+        responseMessage: 'Successful' 
+      });
+    }
+
+    // Find the transaction in our database using partnerReferenceNo
     const transaction = await db
       .select()
       .from(transactions)
-      .where(sql`metadata->>'merchantOrderNo' = ${merchantOrderNo}`)
+      .where(sql`metadata->>'partnerReferenceNo' = ${originalPartnerReferenceNo}`)
       .limit(1)
       .then(rows => rows[0]);
 
     if (!transaction) {
-      logger.error('Transaction not found', { merchantOrderNo });
+      logger.error('Transaction not found', { originalPartnerReferenceNo });
+      // Return success to DANA even if we can't find the transaction
+      // Log the issue but prevent DANA from retrying
       return NextResponse.json(
-        { success: false, message: 'Transaction not found' }, 
-        { status: 404 }
+        { responseCode: '2005600', responseMessage: 'Successful' }
+      );
+    }
+
+    // Check if transaction is already completed to prevent double processing
+    if (transaction.status === 'COMPLETED') {
+      logger.info('Transaction already completed', { 
+        originalPartnerReferenceNo,
+        transactionId: transaction.id
+      });
+      return NextResponse.json(
+        { responseCode: '2005600', responseMessage: 'Successful' }
       );
     }
 
@@ -89,8 +132,7 @@ export async function POST(req: NextRequest) {
     if (!userId) {
       logger.error('User ID not found in transaction', { transaction });
       return NextResponse.json(
-        { success: false, message: 'User ID not found' }, 
-        { status: 400 }
+        { responseCode: '2005600', responseMessage: 'Successful' }
       );
     }
 
@@ -99,7 +141,14 @@ export async function POST(req: NextRequest) {
       .update(transactions)
       .set({ 
         status: 'COMPLETED',
-        updatedAt: new Date()
+        updatedAt: new Date(),
+        metadata: {
+          ...transaction.metadata,
+          paymentStatus: latestTransactionStatus,
+          paymentStatusDesc: transactionStatusDesc,
+          finishedTime: finishedTime,
+          additionalInfo: additionalInfo
+        }
       })
       .where(eq(transactions.id, transaction.id));
 
@@ -116,8 +165,17 @@ export async function POST(req: NextRequest) {
     
     if (!success) {
       logger.error('Failed to update user tokens', { userId, tokenAmount });
-      // Note: We still return a 200 to Dana so they don't retry, but log the error
-      return NextResponse.json({ success: false, message: 'Failed to update user tokens' });
+      // Still return success to DANA - we'll need to handle this manually or with a background job
+      return NextResponse.json({ 
+        responseCode: '2005600', 
+        responseMessage: 'Successful' 
+      });
+    }
+    
+    // Extract payment method info if available
+    let paymentMethod = 'unknown';
+    if (additionalInfo?.paymentInfo?.payOptionInfos?.[0]?.payMethod) {
+      paymentMethod = additionalInfo.paymentInfo.payOptionInfos[0].payMethod;
     }
     
     // Track successful payment
@@ -126,9 +184,11 @@ export async function POST(req: NextRequest) {
       packageId,
       provider: 'dana',
       status: 'payment_completed',
-      amount: transactionAmount?.value || orderAmount?.value,
-      currency: transactionAmount?.currency || orderAmount?.currency || 'IDR',
-      merchantOrderNo,
+      paymentMethod,
+      amount: amount.value,
+      currency: amount.currency,
+      partnerReferenceNo: originalPartnerReferenceNo,
+      referenceNo: originalReferenceNo,
       timestamp: new Date().toISOString()
     });
     
@@ -137,16 +197,21 @@ export async function POST(req: NextRequest) {
       packageId, 
       tokenAmount, 
       newTokenCount,
-      merchantOrderNo
+      partnerReferenceNo: originalPartnerReferenceNo
     });
     
-    // Return success to Dana
-    return NextResponse.json({ success: true });
+    // Return success to Dana with the expected response format from docs
+    return NextResponse.json({ 
+      responseCode: '2005600', 
+      responseMessage: 'Successful' 
+    });
   } catch (error) {
     logger.error('Error processing Dana payment webhook', { error });
+    // Return a success response to prevent DANA from retrying
+    // We'll need to handle this failure manually by checking logs
     return NextResponse.json(
-      { success: false, message: 'Error processing webhook' },
-      { status: 500 }
+      { responseCode: '2005600', responseMessage: 'Successful' },
+      { status: 200 }
     );
   }
 }
@@ -155,14 +220,23 @@ export async function POST(req: NextRequest) {
 function summarizePayload(payload: any): any {
   if (!payload || typeof payload !== 'object') return payload;
   
-  const { response } = payload;
-  if (!response) return payload;
+  const { 
+    originalPartnerReferenceNo, 
+    originalReferenceNo,
+    merchantId,
+    latestTransactionStatus,
+    transactionStatusDesc,
+    amount
+  } = payload;
   
   return {
-    merchantId: response.merchantId,
-    merchantOrderNo: response.merchantOrderNo,
-    acquirementStatus: response.acquirementStatus,
-    orderAmount: response.orderAmount,
-    acquirementTime: response.acquirementTime
+    originalPartnerReferenceNo,
+    originalReferenceNo,
+    merchantId,
+    latestTransactionStatus,
+    transactionStatusDesc,
+    amount,
+    // Include timestamps but not detailed payment info
+    hasAdditionalInfo: !!payload.additionalInfo
   };
 } 

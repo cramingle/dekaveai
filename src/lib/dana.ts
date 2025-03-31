@@ -156,6 +156,66 @@ export async function createDanaPayment(
   }
 }
 
+/**
+ * Verify a DANA payment status
+ * 
+ * This checks if a transaction was successfully completed
+ * Used by the success page to confirm payment before showing success
+ * 
+ * @param transactionId - The transaction ID to verify
+ * @returns Boolean indicating if payment is verified
+ */
+export async function verifyDanaPayment(transactionId: string): Promise<boolean> {
+  try {
+    if (!IS_DANA_CONFIGURED) {
+      logger.warn('Dana payment is not configured. Verification failed.');
+      return false;
+    }
+
+    // In a real implementation, we would query our database 
+    // to check if this transaction is marked as COMPLETED
+    const verifyUrl = typeof window === 'undefined' 
+      ? (BASE_URL.includes('REQUIRED') 
+          ? 'https://dekaveai.vercel.app/api/payment/verify' 
+          : `${BASE_URL}/api/payment/verify`)
+      : '/api/payment/verify';
+    
+    logger.info('Verifying Dana payment', { transactionId, url: verifyUrl });
+    
+    const response = await fetch(verifyUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ transactionId }),
+    });
+    
+    if (!response.ok) {
+      logger.error('Dana payment verification failed', { 
+        status: response.status,
+        statusText: response.statusText
+      });
+      return false;
+    }
+
+    const data = await response.json();
+    
+    if (!data.verified) {
+      logger.warn('Dana payment not verified', { 
+        transactionId,
+        status: data.status 
+      });
+      return false;
+    }
+    
+    logger.info('Dana payment verified successfully', { transactionId });
+    return true;
+  } catch (error) {
+    logger.error('Error verifying Dana payment', { error, transactionId });
+    return false;
+  }
+}
+
 // Export default client
 export default {
   IS_DANA_CONFIGURED,

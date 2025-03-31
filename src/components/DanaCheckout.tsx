@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
-import { IS_DANA_CONFIGURED } from '@/lib/dana';
+import { IS_DANA_CONFIGURED, TOKEN_PACKAGES } from '@/lib/dana';
 import { trackEvent, EventType } from '@/lib/analytics';
 
 type DanaPackage = {
@@ -21,6 +21,7 @@ export function DanaCheckout({ onClose, isNewUser = false }: DanaCheckoutProps) 
   const { user } = useAuth();
   const [selectedPackage, setSelectedPackage] = useState<string>(isNewUser ? 'basic' : '');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   const packages: DanaPackage[] = [
     { id: 'basic', tokens: 100000, price: 75000, discount: 0, tier: 'Pioneer' },
@@ -34,6 +35,7 @@ export function DanaCheckout({ onClose, isNewUser = false }: DanaCheckoutProps) 
     if (!selectedPackage) return;
     
     setIsLoading(true);
+    setError(null);
     
     // Track token purchase attempt
     trackEvent(EventType.TOKEN_PURCHASE, {
@@ -59,7 +61,9 @@ export function DanaCheckout({ onClose, isNewUser = false }: DanaCheckoutProps) 
         }),
       });
       
-      if (!response.ok) {
+      const data = await response.json();
+      
+      if (!response.ok || !data.success) {
         // Track failure
         trackEvent(EventType.TOKEN_PURCHASE, {
           packageId: selectedPackage,
@@ -67,14 +71,21 @@ export function DanaCheckout({ onClose, isNewUser = false }: DanaCheckoutProps) 
           userId: user?.id || 'unknown',
           method: 'dana',
           status: 'failed',
-          error: 'Failed to create payment',
+          error: data.error || data.message || 'Payment creation failed',
+          errorCode: data.code,
           timestamp: new Date().toISOString()
         });
         
-        throw new Error('Failed to create payment');
+        setError(data.message || data.error || 'Failed to create payment. Please try again.');
+        setIsLoading(false);
+        return;
       }
       
-      const { paymentUrl } = await response.json();
+      if (!data.paymentUrl) {
+        setError('Payment URL not provided. Please try again later.');
+        setIsLoading(false);
+        return;
+      }
       
       // Track successful redirect
       trackEvent(EventType.TOKEN_PURCHASE, {
@@ -83,11 +94,12 @@ export function DanaCheckout({ onClose, isNewUser = false }: DanaCheckoutProps) 
         userId: user?.id || 'unknown',
         method: 'dana',
         status: 'redirected',
+        partnerReferenceNo: data.partnerReferenceNo,
         timestamp: new Date().toISOString()
       });
       
       // Redirect to Dana payment page
-      window.location.href = paymentUrl;
+      window.location.href = data.paymentUrl;
     } catch (error) {
       console.error('Error creating payment:', error);
       
@@ -103,7 +115,7 @@ export function DanaCheckout({ onClose, isNewUser = false }: DanaCheckoutProps) 
       });
       
       setIsLoading(false);
-      alert('Something went wrong. Please try again later.');
+      setError('An unexpected error occurred. Please try again later.');
     }
   };
   
@@ -246,6 +258,21 @@ export function DanaCheckout({ onClose, isNewUser = false }: DanaCheckoutProps) 
                 </div>
               )}
             </div>
+            
+            {error && (
+              <motion.div 
+                className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-300 text-sm"
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <div className="flex items-start">
+                  <svg className="w-4 h-4 text-red-400 mt-0.5 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd"></path>
+                  </svg>
+                  <span>{error}</span>
+                </div>
+              </motion.div>
+            )}
             
             <motion.button
               type="submit"

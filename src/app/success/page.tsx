@@ -10,22 +10,27 @@ export default async function SuccessPage({
 }: {
   searchParams: { [key: string]: string | string[] | undefined };
 }) {
-  const transactionId = searchParams.transaction_id as string;
-  const packageId = searchParams.package_id as string;
+  // Get transactionId from URL params
+  const transactionId = 
+    searchParams.transactionId || 
+    searchParams.transaction_id || 
+    '';
   
-  if (!transactionId) {
+  // Normalize to string
+  const txnId = Array.isArray(transactionId) ? transactionId[0] : transactionId;
+  
+  if (!txnId) {
     // No transaction ID found, redirect to home with error
     redirect('/?error=Invalid+transaction');
   }
   
   // Verify the payment with Dana
-  const isValid = await verifyDanaPayment(transactionId);
+  const isValid = await verifyDanaPayment(txnId);
   
   // Track payment verification event
   trackEvent(EventType.TOKEN_PURCHASE, {
-    transactionId,
-    packageId,
-    status: isValid ? 'success' : 'verification_failed',
+    transactionId: txnId,
+    status: isValid ? 'success_page_view' : 'verification_failed',
     provider: 'dana',
     timestamp: new Date().toISOString()
   });
@@ -55,14 +60,14 @@ export default async function SuccessPage({
           <div className="bg-zinc-700/50 rounded-lg p-4 mb-6">
             <div className="flex justify-between mb-2">
               <span className="text-zinc-400">Transaction ID:</span>
-              <span className="text-zinc-200 font-mono text-sm">{transactionId.substring(0, 16)}...</span>
+              <span className="text-zinc-200 font-mono text-sm">
+                {txnId && txnId.length > 16 ? `${txnId.substring(0, 16)}...` : txnId}
+              </span>
             </div>
-            {packageId && (
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Package:</span>
-                <span className="text-zinc-200 capitalize">{packageId}</span>
-              </div>
-            )}
+            <div className="flex justify-between">
+              <span className="text-zinc-400">Status:</span>
+              <span className="text-green-400 font-medium">Completed</span>
+            </div>
           </div>
           
           <a 

@@ -6,13 +6,15 @@ import crypto from 'crypto';
 import { DANA_API_KEY, DANA_API_SECRET, DANA_MERCHANT_ID, DANA_ENVIRONMENT, DANA_CLIENT_ID, DANA_CLIENT_SECRET, getUrl } from '@/lib/env';
 import { db } from '@/lib/db';
 import { transactions } from '@/lib/db/schema';
+import { sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
-// DANA API base URL
+// DANA API base URL based on environment
 const DANA_API_BASE_URL = DANA_ENVIRONMENT === 'production'
   ? 'https://api.saas.dana.id'
   : 'https://api.sandbox.dana.id';
 
-// Updated endpoint from the new documentation
+// Payment Gateway Plugin endpoint from the documentation
 const DANA_PAYMENT_ENDPOINT = '/v1.0/payment-gateway/payment.htm';
 
 // Simple in-memory rate limiting for payment endpoint
@@ -33,11 +35,13 @@ export async function POST(request: NextRequest) {
     });
 
     // Check if Dana is configured
-    if (!DANA_API_KEY || !DANA_API_SECRET || !DANA_MERCHANT_ID) {
+    if (!DANA_API_KEY || !DANA_API_SECRET || !DANA_MERCHANT_ID || !DANA_CLIENT_ID || !DANA_CLIENT_SECRET) {
       logger.error('Dana payment is not configured', {
         DANA_API_KEY: DANA_API_KEY ? '✓ Set' : '✗ Missing',
         DANA_API_SECRET: DANA_API_SECRET ? '✓ Set' : '✗ Missing',
-        DANA_MERCHANT_ID: DANA_MERCHANT_ID ? '✓ Set' : '✗ Missing'
+        DANA_MERCHANT_ID: DANA_MERCHANT_ID ? '✓ Set' : '✗ Missing',
+        DANA_CLIENT_ID: DANA_CLIENT_ID ? '✓ Set' : '✗ Missing',
+        DANA_CLIENT_SECRET: DANA_CLIENT_SECRET ? '✓ Set' : '✗ Missing'
       });
       return NextResponse.json(
         { error: 'Payment system is not configured' },
@@ -124,26 +128,40 @@ export async function POST(request: NextRequest) {
     logger.info('Creating Dana payment', { email, userId, packageId, amount, description });
 
     try {
-      // Calculate timestamp for request
-      const timestamp = Math.floor(Date.now() / 1000).toString();
+      // Generate unique order reference number (partnerReferenceNo)
+      const timestamp = Math.floor(Date.now()).toString();
+      const partnerReferenceNo = `DEKAVE${userId.substring(0, 6)}${timestamp.substring(timestamp.length - 9)}`;
       
-      // Generate unique order ID
-      const merchantOrderNo = `DEKAVE${userId.substring(0, 6)}${timestamp}${Math.floor(Math.random() * 1000)}`;
+      // Generate X-EXTERNAL-ID for the header (similar to partnerReferenceNo but must be unique within a day)
+      const externalId = `DKVE${timestamp.substring(timestamp.length - 10)}${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
       
       // Format timestamp in DANA format (YYYY-MM-DDTHH:mm:ss+07:00)
       const date = new Date();
+      const offset = 7 * 60; // GMT+7 in minutes
+      const adjustedDate = new Date(date.getTime() + (offset * 60 * 1000));
+      
       const pad = (num: number) => num.toString().padStart(2, '0');
-      const year = date.getUTCFullYear();
-      const month = pad(date.getUTCMonth() + 1);
-      const day = pad(date.getUTCDate());
-      const hours = pad(date.getUTCHours() + 7); // Add 7 hours for Indonesia timezone
-      const minutes = pad(date.getUTCMinutes());
-      const seconds = pad(date.getUTCSeconds());
+      const year = adjustedDate.getUTCFullYear();
+      const month = pad(adjustedDate.getUTCMonth() + 1);
+      const day = pad(adjustedDate.getUTCDate());
+      const hours = pad(adjustedDate.getUTCHours());
+      const minutes = pad(adjustedDate.getUTCMinutes());
+      const seconds = pad(adjustedDate.getUTCSeconds());
       const danaTimestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+07:00`;
+      
+      // Generate expiration time (30 minutes from now)
+      const expiryDate = new Date(date.getTime() + (30 * 60 * 1000) + (offset * 60 * 1000));
+      const expiryYear = expiryDate.getUTCFullYear();
+      const expiryMonth = pad(expiryDate.getUTCMonth() + 1);
+      const expiryDay = pad(expiryDate.getUTCDate());
+      const expiryHours = pad(expiryDate.getUTCHours());
+      const expiryMinutes = pad(expiryDate.getUTCMinutes());
+      const expirySeconds = pad(expiryDate.getUTCSeconds());
+      const validUpTo = `${expiryYear}-${expiryMonth}-${expiryDay}T${expiryHours}:${expiryMinutes}:${expirySeconds}+07:00`;
       
       // Generate channel ID based on user agent (5 chars max)
       const userAgent = request.headers.get('user-agent') || 'unknown';
-      const channelIdHash = crypto
+      const channelId = crypto
         .createHash('md5')
         .update(userAgent)
         .digest('hex')
@@ -152,14 +170,13 @@ export async function POST(request: NextRequest) {
       
       // Create request payload based on Payment Gateway Plugin documentation
       const payload = {
-        partnerReferenceNo: merchantOrderNo,
+        partnerReferenceNo: partnerReferenceNo,
         merchantId: DANA_MERCHANT_ID,
-        subMerchantId: "", // Optional
         amount: {
           value: amount.toFixed(2),
           currency: "IDR"
         },
-        externalStoreId: "DEKAVE", // Optional store identifier
+        validUpTo: validUpTo,
         urlParams: [
           {
             url: getUrl('/api/webhooks/dana/redirect'),
@@ -178,7 +195,7 @@ export async function POST(request: NextRequest) {
             scenario: "REDIRECTION",
             goods: [
               {
-                category: "digital_goods",
+                category: "digital_goods/software",
                 price: {
                   value: amount.toFixed(2),
                   currency: "IDR"
@@ -193,23 +210,58 @@ export async function POST(request: NextRequest) {
               externalUserId: userId.substring(0, 30)
             }
           },
-          mcc: "5817", // Digital Goods
           envInfo: {
+            sessionId: externalId,
+            websiteLanguage: "id_ID",
+            clientIp: ip,
             sourcePlatform: "IPG",
             terminalType: "WEB",
             orderTerminalType: "WEB"
           }
-        }
+        },
+        mcc: "5734" // Computer Software
       };
       
-      // Generate signature using DANA's signature format
-      // Need to include B2B access token and use HMAC-SHA512 as per Dana documentation
-      const payloadHash = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex').toLowerCase();
+      // Store transaction in database
+      try {
+        await db.insert(transactions).values({
+          id: crypto.randomUUID(),
+          userId: userId,
+          packageId: packageId,
+          amount: amount.toString(),
+          status: "PENDING",
+          provider: "dana",
+          description: description,
+          metadata: {
+            partnerReferenceNo: partnerReferenceNo,
+            externalId: externalId,
+            email: email,
+            description: description
+          },
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+        
+        logger.info('Created transaction record', { partnerReferenceNo, externalId });
+      } catch (dbError) {
+        logger.error('Failed to create transaction record', { error: dbError });
+        // Continue processing even if the DB insert fails
+      }
+      
+      // Generate payload hash for signature
+      const stringifiedPayload = JSON.stringify(payload);
+      const payloadHash = crypto.createHash('sha256')
+        .update(stringifiedPayload)
+        .digest('hex')
+        .toLowerCase();
+      
+      // Generate signature using HMAC-SHA512 as per documentation
       const signatureBase = `POST:${DANA_PAYMENT_ENDPOINT}:${DANA_CLIENT_SECRET}:${payloadHash}:${danaTimestamp}`;
       
-      logger.info('Generating signature with base', { 
-        signatureBase: signatureBase.substring(0, 50) + '...',
-        secretLength: DANA_API_SECRET.length
+      logger.info('Generating signature', { 
+        signatureBasePreview: signatureBase.substring(0, 50) + '...',
+        timestamp: danaTimestamp,
+        payloadHashPreview: payloadHash.substring(0, 20) + '...'
       });
       
       const signature = crypto
@@ -217,33 +269,35 @@ export async function POST(request: NextRequest) {
         .update(signatureBase)
         .digest('base64');
       
-      logger.info('Generated signature', { signature });
-        
-      // Create headers as specified in the documentation
+      // Create headers as specified in the DANA documentation
       const headers = {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${DANA_CLIENT_SECRET}`, // Use client secret as bearer token
         'X-TIMESTAMP': danaTimestamp,
         'X-SIGNATURE': signature,
         'ORIGIN': getUrl('/').replace(/^https?:\/\//, '').replace(/\/$/, ''),
-        'X-PARTNER-ID': DANA_CLIENT_ID || "",
-        'X-EXTERNAL-ID': merchantOrderNo,
-        'CHANNEL-ID': channelIdHash
+        'X-PARTNER-ID': DANA_CLIENT_ID,
+        'X-EXTERNAL-ID': externalId,
+        'CHANNEL-ID': channelId
       };
       
       logger.info('Making Dana payment request', {
         url: `${DANA_API_BASE_URL}${DANA_PAYMENT_ENDPOINT}`,
-        merchantOrderNo: payload.partnerReferenceNo,
+        partnerReferenceNo,
         merchantId: DANA_MERCHANT_ID,
         amount: payload.amount.value,
-        headers: headers,
-        payload: JSON.stringify(payload).substring(0, 100) + '...'
+        headers: {
+          ...headers,
+          'X-SIGNATURE': signature.substring(0, 20) + '...',
+          'Authorization': 'Bearer ****'
+        }
       });
       
       // Make the API request to Dana
       const response = await fetch(`${DANA_API_BASE_URL}${DANA_PAYMENT_ENDPOINT}`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(payload)
+        body: stringifiedPayload
       });
       
       // Log response details
@@ -253,156 +307,128 @@ export async function POST(request: NextRequest) {
         headers: Object.fromEntries(response.headers.entries())
       });
       
-      // Clone the response before reading it, to avoid "body already read" errors
-      const responseClone = response.clone();
-      
-      // Attempt to get the response text first for debugging
-      const responseText = await responseClone.text();
-      logger.info('Dana API raw response', {
-        text: responseText || '(empty response)',
-        contentLength: responseText.length
-      });
-      
+      // Parse response
+      let data;
       try {
-        if (response.ok) {
-          const data = await response.json();
-          
-          // Check if the response is successful based on DANA documentation
-          if (data.responseCode === "2000000" && data.webRedirectUrl) {
-            // The webRedirectUrl is the payment URL for the user
-            const paymentUrl = data.webRedirectUrl;
-            
-            // Update the successful transaction in database
-            await db.insert(transactions).values({
-              id: crypto.randomUUID(),
-              userId,
-              packageId,
-              amount: amount.toString(),
-              status: "PENDING", // Initial status is pending until callback
-              provider: "DANA",
-              description,
-              metadata: {
-                merchantOrderNo: payload.partnerReferenceNo,
-                paymentUrl,
-                orderAmount: amount,
-                currency: "IDR",
-                referenceNo: data.referenceNo || ""
-              },
-              createdAt: new Date()
-            });
-            
-            // Log success
-            logger.info('Dana payment created successfully', {
-              orderId: payload.partnerReferenceNo,
-              packageId,
-              userId,
-              paymentUrl: paymentUrl.substring(0, 50) + '...' // Log only part of URL
-            });
-            
-            // Track successful payment URL generation
-            trackEvent(EventType.TOKEN_PURCHASE, { 
-              userId,
-              email,
-              packageId,
-              provider: 'dana',
-              status: 'payment_url_generated',
-              timestamp: new Date().toISOString()
-            });
-            
-            // Return successful response with payment URL
-            return NextResponse.json({
-              success: true,
-              orderId: payload.partnerReferenceNo,
-              paymentUrl: paymentUrl,
-              expireTime: 15 // minutes
-            });
-          } else {
-            // Handle API error response
-            logger.error('Dana payment failed - API returned error', {
-              error: data.responseMessage || data.errorMessage || 'Unknown error',
-              code: data.responseCode || data.errorCode || 'UNKNOWN',
-              orderId: payload.partnerReferenceNo
-            });
-            
-            // Track failure
-            trackEvent(EventType.TOKEN_PURCHASE, { 
-              userId,
-              email,
-              packageId,
-              provider: 'dana',
-              status: 'payment_url_generation_failed',
-              error: data.responseMessage || data.errorMessage || 'Unknown error',
-              timestamp: new Date().toISOString()
-            });
-
-            return NextResponse.json(
-              { 
-                success: false, 
-                message: 'Payment initiation failed',
-                errorCode: data.responseCode || data.errorCode || 'UNKNOWN',
-                errorMessage: data.responseMessage || data.errorMessage || 'Unknown error from payment provider'
-              },
-              { status: 400 }
-            );
-          }
-        } else {
-          // Handle HTTP error response
-          const errorData = await response.json().catch(() => ({ 
-            errorCode: 'HTTP_ERROR', 
-            errorMessage: `HTTP Error ${response.status}`
-          }));
-          
-          const isRetryable = response.status >= 500 || response.status === 429;
-          
-          logger.error('Dana payment failed - HTTP error', {
-            status: response.status,
-            errorCode: errorData.errorCode || 'UNKNOWN',
-            errorMessage: errorData.errorMessage || 'Unknown error',
-            isRetryable: isRetryable,
-            merchantOrderNo
-          });
-          
-          // Track failure
-          trackEvent(EventType.TOKEN_PURCHASE, { 
-            userId,
-            email,
-            packageId,
-            provider: 'dana',
-            status: 'api_error',
-            errorCode: errorData.errorCode || 'UNKNOWN',
-            errorMessage: errorData.errorMessage || 'Unknown error',
-            timestamp: new Date().toISOString()
-          });
-          
+        data = await response.json();
+        logger.info('Dana API response parsed', {
+          responseCode: data.responseCode,
+          responseMessage: data.responseMessage,
+          hasRedirectUrl: !!data.webRedirectUrl
+        });
+      } catch (error) {
+        const text = await response.text();
+        logger.error('Failed to parse Dana API response', { 
+          status: response.status,
+          body: text.substring(0, 500)
+        });
+        return NextResponse.json(
+          { error: 'Invalid response from payment provider' }, 
+          { status: 502 }
+        );
+      }
+      
+      // Handle successful response
+      if (response.ok && data.responseCode === '2000000') {
+        // The webRedirectUrl is the payment URL for the user
+        const paymentUrl = data.webRedirectUrl;
+        
+        if (!paymentUrl) {
+          logger.error('Dana payment URL missing in response', { response: data });
           return NextResponse.json(
-            { 
-              success: false, 
-              message: 'Payment service error',
-              errorCode: errorData.errorCode || 'UNKNOWN',
-              errorMessage: errorData.errorMessage || 'Unknown error from payment provider',
-              isRetryable
-            },
-            { status: isRetryable ? 503 : 400 }
+            { error: 'Payment provider returned an invalid response' },
+            { status: 502 }
           );
         }
-      } catch (parseError) {
-        logger.error('Error parsing Dana API response', {
-          error: parseError,
-          responseText
+        
+        // Try to update transaction with reference number
+        try {
+          // Find existing transaction first
+          const existingTransaction = await db
+            .select()
+            .from(transactions)
+            .where(sql`metadata->>'partnerReferenceNo' = ${partnerReferenceNo}`)
+            .limit(1)
+            .then(rows => rows[0]);
+
+          if (existingTransaction) {
+            // Update transaction with new metadata
+            await db.update(transactions)
+              .set({ 
+                updatedAt: new Date(),
+                metadata: {
+                  ...(existingTransaction.metadata || {}),
+                  partnerReferenceNo,
+                  externalId,
+                  email,
+                  description,
+                  referenceNo: data.referenceNo,
+                  responseCode: data.responseCode,
+                  responseMessage: data.responseMessage
+                }
+              })
+              .where(eq(transactions.id, existingTransaction.id));
+          }
+        } catch (dbError) {
+          logger.error('Failed to update transaction with referenceNo', { error: dbError });
+          // Continue even if DB update fails
+        }
+        
+        logger.info('Dana payment created successfully', {
+          partnerReferenceNo,
+          referenceNo: data.referenceNo,
+          paymentUrlPreview: paymentUrl.substring(0, 50) + '...'
+        });
+        
+        // Track successful payment URL generation
+        trackEvent(EventType.TOKEN_PURCHASE, {
+          userId,
+          packageId,
+          provider: 'dana',
+          status: 'payment_url_generated',
+          partnerReferenceNo,
+          referenceNo: data.referenceNo,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Return successful response with payment URL
+        return NextResponse.json({
+          success: true,
+          paymentUrl: paymentUrl,
+          partnerReferenceNo: partnerReferenceNo
+        });
+      } 
+      // Handle error response
+      else {
+        logger.error('Dana payment failed - API returned error', {
+          status: response.status,
+          responseCode: data.responseCode,
+          responseMessage: data.responseMessage
+        });
+        
+        // Track failure
+        trackEvent(EventType.TOKEN_PURCHASE, {
+          userId,
+          packageId,
+          provider: 'dana',
+          status: 'payment_url_generation_failed',
+          responseCode: data.responseCode,
+          responseMessage: data.responseMessage,
+          timestamp: new Date().toISOString()
         });
         
         return NextResponse.json(
           { 
-            success: false, 
-            message: 'Error processing payment provider response',
-            error: 'RESPONSE_PARSING_ERROR'
+            success: false,
+            error: 'Payment initiation failed',
+            code: data.responseCode,
+            message: data.responseMessage || 'Unknown error from payment provider'
           },
-          { status: 500 }
+          { status: 400 }
         );
       }
     } catch (error) {
       logger.error('Error creating Dana payment:', error);
-      
       return NextResponse.json(
         { error: 'Failed to create payment' },
         { status: 500 }
