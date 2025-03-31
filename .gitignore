@@ -67,3 +67,6 @@ qris_*.txt
 *qris*.txt
 /docs/dana/*.txt
 !/docs/dana/README.md
+
+# DANA documentation with sensitive information
+docs/dana/docs.json

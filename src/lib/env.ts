@@ -42,13 +42,14 @@ export const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 export const DATABASE_URL = process.env.DATABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('supabase', 'postgres');
 
 // Dana Payment
-export const DANA_ENABLED = !!process.env.NEXT_PUBLIC_DANA_ENABLED;
-export const DANA_ENVIRONMENT = (process.env.NEXT_PUBLIC_DANA_ENVIRONMENT as 'sandbox' | 'production') || 'sandbox';
-export const DANA_API_KEY = process.env.DANA_API_KEY;
-export const DANA_API_SECRET = process.env.DANA_API_SECRET;
-export const DANA_MERCHANT_ID = process.env.DANA_MERCHANT_ID;
-export const DANA_CLIENT_ID = process.env.DANA_CLIENT_ID;
-export const DANA_CLIENT_SECRET = process.env.DANA_CLIENT_SECRET;
+export const DANA_ENABLED = process.env.DANA_ENABLED === 'true';
+export const DANA_ENVIRONMENT = (process.env.DANA_ENVIRONMENT || 'sandbox') as 'production' | 'sandbox';
+export const DANA_API_KEY = process.env.DANA_API_KEY || '';
+export const DANA_API_SECRET = process.env.DANA_API_SECRET || '';
+export const DANA_MERCHANT_ID = process.env.DANA_MERCHANT_ID || '';
+export const DANA_CLIENT_ID = process.env.DANA_CLIENT_ID || '';
+export const DANA_CLIENT_SECRET = process.env.DANA_CLIENT_SECRET || '';
+export const DANA_PRIVATE_KEY = process.env.DANA_PRIVATE_KEY || '';
 
 // Log environment status on server-side only (to avoid client-side logs)
 if (typeof window === 'undefined') {
@@ -98,6 +99,7 @@ export const env = {
   DANA_MERCHANT_ID,
   DANA_CLIENT_ID,
   DANA_CLIENT_SECRET,
+  DANA_PRIVATE_KEY,
   IS_PRODUCTION,
   IS_DEVELOPMENT
 };
@@ -118,6 +120,7 @@ export default {
   DANA_MERCHANT_ID,
   DANA_CLIENT_ID,
   DANA_CLIENT_SECRET,
+  DANA_PRIVATE_KEY,
   IS_PRODUCTION,
   IS_DEVELOPMENT,
   getUrl

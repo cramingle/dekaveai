@@ -3,7 +3,7 @@ import { TOKEN_PACKAGES, getDanaAccessToken } from '@/lib/dana';
 import logger from '@/lib/logger';
 import { trackEvent, EventType } from '@/lib/analytics';
 import crypto from 'crypto';
-import { DANA_API_KEY, DANA_API_SECRET, DANA_MERCHANT_ID, DANA_ENVIRONMENT, DANA_CLIENT_ID, DANA_CLIENT_SECRET, getUrl } from '@/lib/env';
+import { DANA_API_KEY, DANA_API_SECRET, DANA_MERCHANT_ID, DANA_ENVIRONMENT, DANA_CLIENT_ID, DANA_CLIENT_SECRET, DANA_PRIVATE_KEY, getUrl } from '@/lib/env';
 import { db } from '@/lib/db';
 import { transactions } from '@/lib/db/schema';
 import { sql, eq } from 'drizzle-orm';
@@ -94,17 +94,17 @@ export async function POST(request: NextRequest) {
       headers: Object.fromEntries(request.headers.entries())
     });
 
-    // Check if Dana is configured
-    if (!DANA_API_KEY || !DANA_API_SECRET || !DANA_MERCHANT_ID || !DANA_CLIENT_ID || !DANA_CLIENT_SECRET) {
-      logger.error('Dana payment is not configured', {
+    // Check if Dana is configured with all required credentials
+    if (!DANA_API_KEY || !DANA_API_SECRET || !DANA_MERCHANT_ID || !DANA_CLIENT_ID || !DANA_PRIVATE_KEY) {
+      logger.error('Dana payment is not completely configured', {
         DANA_API_KEY: DANA_API_KEY ? '✓ Set' : '✗ Missing',
         DANA_API_SECRET: DANA_API_SECRET ? '✓ Set' : '✗ Missing',
         DANA_MERCHANT_ID: DANA_MERCHANT_ID ? '✓ Set' : '✗ Missing',
         DANA_CLIENT_ID: DANA_CLIENT_ID ? '✓ Set' : '✗ Missing',
-        DANA_CLIENT_SECRET: DANA_CLIENT_SECRET ? '✓ Set' : '✗ Missing'
+        DANA_PRIVATE_KEY: DANA_PRIVATE_KEY ? '✓ Set' : '✗ Missing'
       });
       return NextResponse.json(
-        { error: 'Payment system is not configured' },
+        { error: 'Payment system is not fully configured' },
         { status: 503 }
       );
     }

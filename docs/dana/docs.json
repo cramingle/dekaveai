@@ -44,7 +44,7 @@
               {"title": "2.5.5 TerminalTypeEnum", "page": 18}
             ]},
             {"title": "2.6 Signature Generation & Validation", "page": 19, "subsections": [
-              {"title": "2.6.1 Symmetric with B2B Access Token (HMAC_SHAS12)", "page": 19, "subsections": [
+              {"title": "2.6.1 Symmetric with B2B Access Token (HMAC_SHA512)", "page": 19, "subsections": [
                 {"title": "2.6.1.1 Digital Signature Generation", "page": 19},
                 {"title": "2.6.1.2 Digital Signature Validation", "page": 19}
               ]},

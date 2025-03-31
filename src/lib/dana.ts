@@ -1,6 +1,28 @@
 import logger from './logger';
-import { getUrl, DANA_ENABLED, DANA_ENVIRONMENT, BASE_URL, DANA_CLIENT_ID, DANA_API_SECRET } from './env';
+import { getUrl, DANA_ENABLED, DANA_ENVIRONMENT, BASE_URL, DANA_CLIENT_ID, DANA_API_SECRET, DANA_PRIVATE_KEY, DANA_MERCHANT_ID } from './env';
 import crypto from 'crypto';
+
+// Helper function to check if the key is in PEM format
+function isPEMFormat(key: string): boolean {
+  return key.includes('-----BEGIN') && key.includes('-----END');
+}
+
+// Function to sign data using RSA-SHA256 with a private key
+function signWithRSA(data: string, privateKeyPEM: string): string {
+  if (!privateKeyPEM) {
+    throw new Error('Private key is required for RSA signing');
+  }
+  
+  // Ensure the key is in PEM format
+  if (!isPEMFormat(privateKeyPEM)) {
+    throw new Error('Private key must be in PEM format');
+  }
+  
+  // Create RSA signature using SHA256
+  const sign = crypto.createSign('SHA256');
+  sign.update(data);
+  return sign.sign(privateKeyPEM, 'base64');
+}
 
 // Define Dana configuration interface
 interface DanaConfig {
@@ -24,8 +46,13 @@ const DANA_CONFIG: DanaConfig = {
   }
 };
 
-// Flag to track if Dana is properly configured - just check for presence of public flag
-export const IS_DANA_CONFIGURED = DANA_ENABLED;
+// Check if DANA is properly configured including required private key
+const IS_DANA_CONFIGURED = DANA_ENABLED && 
+  !!DANA_CLIENT_ID && 
+  !!DANA_MERCHANT_ID && 
+  !!DANA_PRIVATE_KEY;
+
+export { IS_DANA_CONFIGURED };
 
 // Log configuration status
 if (!IS_DANA_CONFIGURED) {
@@ -243,15 +270,10 @@ export async function getDanaAccessToken(): Promise<string | null> {
     }
     
     if (!IS_DANA_CONFIGURED) {
-      logger.warn('Dana payment is not configured. Cannot get access token.');
-      return null;
-    }
-
-    // Check if required credentials are available
-    if (!DANA_CLIENT_ID || !DANA_API_SECRET) {
-      logger.error('Missing required DANA credentials for token acquisition', {
+      logger.error('Dana payment is not fully configured. Required: CLIENT_ID, MERCHANT_ID, and PRIVATE_KEY', {
         hasClientId: !!DANA_CLIENT_ID,
-        hasApiSecret: !!DANA_API_SECRET
+        hasMerchantId: !!DANA_MERCHANT_ID,
+        hasPrivateKey: !!DANA_PRIVATE_KEY
       });
       return null;
     }
@@ -260,7 +282,8 @@ export async function getDanaAccessToken(): Promise<string | null> {
       ? 'https://api.saas.dana.id'
       : 'https://api.sandbox.dana.id';
 
-    const TOKEN_ENDPOINT = '/v1.0/partner/accessToken.apply';
+    // Use the correct token endpoint from documentation
+    const TOKEN_ENDPOINT = '/v1.0/access-token/b2b.htm';
     
     // Generate timestamp in DANA format (YYYY-MM-DDTHH:mm:ss+07:00)
     const date = new Date();
@@ -286,34 +309,60 @@ export async function getDanaAccessToken(): Promise<string | null> {
       timestamp
     });
     
-    // For asymmetric signature, we should use RSA, but since we're using the provided
-    // DANA_API_SECRET for simplicity in this implementation
-    const signature = crypto
-      .createHmac('sha512', DANA_API_SECRET)
-      .update(signatureBase)
-      .digest('base64');
+    // Generate signature using RSA-SHA256 with the private key
+    // This follows DANA's SHA256withRSA requirement
+    let signature: string;
+    try {
+      signature = signWithRSA(signatureBase, DANA_PRIVATE_KEY);
+      logger.info('Generated RSA-SHA256 signature for DANA authentication');
+    } catch (signError) {
+      logger.error('Failed to generate RSA signature for DANA authentication', { 
+        error: signError,
+        hasPrivateKey: !!DANA_PRIVATE_KEY,
+        privateKeyPreview: DANA_PRIVATE_KEY ? 'Key exists (not shown for security)' : 'Key missing'
+      });
+      return null; // No fallback - explicitly fail if RSA signing fails
+    }
+    
+    // Generate a dynamic channelId (max 5 chars) based on a hash
+    // This should be unique per device/environment similar to route.ts
+    const uniqueIdentifier = `${process.pid}-${Math.random()}-${Date.now()}`;
+    const channelId = crypto
+      .createHash('md5')
+      .update(uniqueIdentifier)
+      .digest('hex')
+      .substring(0, 5)
+      .toUpperCase();
     
     const headers = {
       'Content-Type': 'application/json',
       'X-CLIENT-KEY': clientKey,
       'X-TIMESTAMP': timestamp,
-      'X-SIGNATURE': signature
+      'X-SIGNATURE': signature,
+      'CHANNEL-ID': channelId
     };
     
     logger.info('Requesting DANA B2B access token', {
       url: `${DANA_API_BASE_URL}${TOKEN_ENDPOINT}`,
       clientKey: clientKey,
+      channelId: channelId,
       headers: {
         ...headers,
         'X-SIGNATURE': signature.substring(0, 20) + '...'
       }
     });
     
+    // Update request body according to documentation
+    const requestBody = {
+      grantType: "client_credentials",
+      additionalInfo: {}
+    };
+    
     // Make the token request
     const response = await fetch(`${DANA_API_BASE_URL}${TOKEN_ENDPOINT}`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({})
+      body: JSON.stringify(requestBody)
     });
     
     logger.info('DANA token API response received', {
