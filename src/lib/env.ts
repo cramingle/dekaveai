@@ -3,7 +3,7 @@
 
 import { z } from 'zod';
 
-// Debug logging for environment variables
+// Debug logging for environment variables (server-side only)
 if (typeof window === 'undefined') {
   console.log('Loading environment variables...');
   console.log('OPENAI_API_KEY present:', !!process.env.OPENAI_API_KEY);
@@ -11,63 +11,68 @@ if (typeof window === 'undefined') {
   console.log('VERCEL_ENV:', process.env.VERCEL_ENV);
 }
 
-const envSchema = z.object({
+// Client-side environment schema (only public variables)
+const clientEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   VERCEL_ENV: z.enum(['development', 'preview', 'production']).default('development'),
   
-  // Database - derived from Supabase URL if not provided
+  // Supabase public variables
+  NEXT_PUBLIC_SUPABASE_URL: z.string().min(1),
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
+});
+
+// Server-side environment schema (includes sensitive variables)
+const serverEnvSchema = z.object({
+  // Include client schema
+  ...clientEnvSchema.shape,
+  
+  // Database
   DATABASE_URL: z.string().optional(),
   
-  // Supabase
+  // Supabase private variables
   SUPABASE_URL: z.string().min(1),
   SUPABASE_ANON_KEY: z.string().min(1),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
-  NEXT_PUBLIC_SUPABASE_URL: z.string().min(1),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
   
-  // Stripe - Optional since we're using MCP tools
+  // Stripe
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   
-  // OpenAI
+  // OpenAI (server-side only)
   OPENAI_API_KEY: z.string().min(1),
   
-  // Vercel Blob Storage - Optional for now
+  // Vercel Blob Storage
   BLOB_READ_WRITE_TOKEN: z.string().optional(),
   
-  // Google Auth - Optional since we're using Supabase Auth
+  // Google Auth
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
 });
 
-export const env = envSchema.parse({
-  NODE_ENV: process.env.NODE_ENV,
-  VERCEL_ENV: process.env.VERCEL_ENV,
-  
-  // Database URL - convert from Supabase URL if not provided
-  DATABASE_URL: process.env.DATABASE_URL || process.env.SUPABASE_URL?.replace('https://', 'postgresql://postgres:postgres@')?.replace('.supabase.co', '.supabase.co:5432/postgres'),
-  
-  // Supabase
-  SUPABASE_URL: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
-  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
-  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL,
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY,
-  
-  // Stripe
-  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
-  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
-  
-  // OpenAI
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-  
-  // Vercel Blob Storage
-  BLOB_READ_WRITE_TOKEN: process.env.BLOB_READ_WRITE_TOKEN,
-  
-  // Google Auth - Optional since we're using Supabase Auth
-  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
-  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
-});
+// Parse environment variables based on runtime context
+export const env = typeof window === 'undefined' 
+  ? serverEnvSchema.parse({
+      NODE_ENV: process.env.NODE_ENV,
+      VERCEL_ENV: process.env.VERCEL_ENV,
+      DATABASE_URL: process.env.DATABASE_URL || process.env.SUPABASE_URL?.replace('https://', 'postgresql://postgres:postgres@')?.replace('.supabase.co', '.supabase.co:5432/postgres'),
+      SUPABASE_URL: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
+      SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+      NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL,
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY,
+      STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+      STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+      BLOB_READ_WRITE_TOKEN: process.env.BLOB_READ_WRITE_TOKEN,
+      GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+      GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    })
+  : clientEnvSchema.parse({
+      NODE_ENV: process.env.NODE_ENV,
+      VERCEL_ENV: process.env.VERCEL_ENV,
+      NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    });
 
 // Base URL for the application
 export const BASE_URL = (() => {
@@ -106,12 +111,17 @@ export const STRIPE_PRICE_IDS = {
   max: process.env.STRIPE_MAX_PRICE_ID || 'price_1R8eFgBfSVCq5UYnbCgskl2Y'
 } as const;
 
+// Export environment-specific values
+export const DATABASE_URL = typeof window === 'undefined' 
+  ? process.env.DATABASE_URL || process.env.SUPABASE_URL?.replace('https://', 'postgresql://postgres:postgres@')?.replace('.supabase.co', '.supabase.co:5432/postgres')
+  : undefined;
+
 // Log environment status on server-side only (to avoid client-side logs)
 if (typeof window === 'undefined') {
   console.log('Environment configuration loaded:', {
     NODE_ENV: process.env.NODE_ENV,
     BASE_URL,
-    DATABASE_URL: env.DATABASE_URL ? '✓ Set' : '✗ Missing',
+    DATABASE_URL: DATABASE_URL ? '✓ Set' : '✗ Missing',
   });
 }
 
@@ -134,7 +144,7 @@ export function getUrl(path: string): string {
 // Export default object for easier importing
 export default {
   BASE_URL,
-  DATABASE_URL: env.DATABASE_URL,
+  DATABASE_URL,
   STRIPE_PUBLISHABLE_KEY,
   STRIPE_PRICE_IDS,
   IS_PRODUCTION,
