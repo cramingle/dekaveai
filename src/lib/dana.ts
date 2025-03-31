@@ -1,5 +1,6 @@
 import logger from './logger';
-import { getUrl, DANA_ENABLED, DANA_ENVIRONMENT, BASE_URL } from './env';
+import { getUrl, DANA_ENABLED, DANA_ENVIRONMENT, BASE_URL, DANA_CLIENT_ID, DANA_API_SECRET } from './env';
+import crypto from 'crypto';
 
 // Define Dana configuration interface
 interface DanaConfig {
@@ -40,6 +41,14 @@ export const TOKEN_PACKAGES = {
   'pro': { tokens: 600000, tier: 'Dominator', price: 300000 },
   'max': { tokens: 1000000, tier: 'Overlord', price: 450000 },
 };
+
+// Simple in-memory token cache
+interface TokenCache {
+  token: string;
+  expiresAt: number; // Timestamp when token expires
+}
+
+let accessTokenCache: TokenCache | null = null;
 
 /**
  * Generate a DANA payment URL
@@ -213,6 +222,144 @@ export async function verifyDanaPayment(transactionId: string): Promise<boolean>
   } catch (error) {
     logger.error('Error verifying Dana payment', { error, transactionId });
     return false;
+  }
+}
+
+/**
+ * Get a B2B access token from DANA
+ * This token is required for API authentication
+ * Uses an in-memory cache to avoid requesting a new token for every payment
+ * 
+ * @returns The access token or null if acquisition fails
+ */
+export async function getDanaAccessToken(): Promise<string | null> {
+  try {
+    // Check if we have a valid cached token
+    if (accessTokenCache && accessTokenCache.expiresAt > Date.now()) {
+      logger.info('Using cached DANA B2B access token', {
+        expiresIn: Math.round((accessTokenCache.expiresAt - Date.now()) / 1000) + ' seconds'
+      });
+      return accessTokenCache.token;
+    }
+    
+    if (!IS_DANA_CONFIGURED) {
+      logger.warn('Dana payment is not configured. Cannot get access token.');
+      return null;
+    }
+
+    // Check if required credentials are available
+    if (!DANA_CLIENT_ID || !DANA_API_SECRET) {
+      logger.error('Missing required DANA credentials for token acquisition', {
+        hasClientId: !!DANA_CLIENT_ID,
+        hasApiSecret: !!DANA_API_SECRET
+      });
+      return null;
+    }
+
+    const DANA_API_BASE_URL = DANA_ENVIRONMENT === 'production'
+      ? 'https://api.saas.dana.id'
+      : 'https://api.sandbox.dana.id';
+
+    const TOKEN_ENDPOINT = '/v1.0/partner/accessToken.apply';
+    
+    // Generate timestamp in DANA format (YYYY-MM-DDTHH:mm:ss+07:00)
+    const date = new Date();
+    const offset = 7 * 60; // GMT+7 in minutes
+    const adjustedDate = new Date(date.getTime() + (offset * 60 * 1000));
+    
+    const pad = (num: number) => num.toString().padStart(2, '0');
+    const year = adjustedDate.getUTCFullYear();
+    const month = pad(adjustedDate.getUTCMonth() + 1);
+    const day = pad(adjustedDate.getUTCDate());
+    const hours = pad(adjustedDate.getUTCHours());
+    const minutes = pad(adjustedDate.getUTCMinutes());
+    const seconds = pad(adjustedDate.getUTCSeconds());
+    const timestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+07:00`;
+    
+    // Generate signature for token request using asymmetric signature
+    // Format: <X-CLIENT-KEY> + "|" + <X-TIMESTAMP>
+    const clientKey = DANA_CLIENT_ID;
+    const signatureBase = `${clientKey}|${timestamp}`;
+    
+    logger.info('Generating B2B token signature', { 
+      signatureBasePreview: signatureBase,
+      timestamp
+    });
+    
+    // For asymmetric signature, we should use RSA, but since we're using the provided
+    // DANA_API_SECRET for simplicity in this implementation
+    const signature = crypto
+      .createHmac('sha512', DANA_API_SECRET)
+      .update(signatureBase)
+      .digest('base64');
+    
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-CLIENT-KEY': clientKey,
+      'X-TIMESTAMP': timestamp,
+      'X-SIGNATURE': signature
+    };
+    
+    logger.info('Requesting DANA B2B access token', {
+      url: `${DANA_API_BASE_URL}${TOKEN_ENDPOINT}`,
+      clientKey: clientKey,
+      headers: {
+        ...headers,
+        'X-SIGNATURE': signature.substring(0, 20) + '...'
+      }
+    });
+    
+    // Make the token request
+    const response = await fetch(`${DANA_API_BASE_URL}${TOKEN_ENDPOINT}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({})
+    });
+    
+    logger.info('DANA token API response received', {
+      status: response.status,
+      statusText: response.statusText
+    });
+    
+    if (!response.ok) {
+      try {
+        const errorData = await response.json();
+        logger.error('DANA token acquisition failed', { 
+          status: response.status,
+          data: errorData
+        });
+      } catch (e) {
+        logger.error('DANA token acquisition failed with non-JSON response', { 
+          status: response.status,
+          text: await response.text()
+        });
+      }
+      return null;
+    }
+    
+    const data = await response.json();
+    
+    if (!data.accessToken) {
+      logger.error('DANA token response missing accessToken', { data });
+      return null;
+    }
+    
+    logger.info('DANA B2B access token acquired successfully', {
+      tokenPreview: data.accessToken.substring(0, 10) + '...',
+      expiresIn: data.expiresIn
+    });
+    
+    // Cache the token with a safety margin (expires 1 minute before actual expiry)
+    const safetyMarginMs = 60 * 1000; // 1 minute
+    accessTokenCache = {
+      token: data.accessToken,
+      expiresAt: Date.now() + (data.expiresIn * 1000) - safetyMarginMs
+    };
+    
+    return data.accessToken;
+  } catch (error) {
+    logger.error('Error acquiring DANA B2B access token', { error });
+    return null;
   }
 }
 

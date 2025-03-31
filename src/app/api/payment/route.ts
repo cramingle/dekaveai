@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { TOKEN_PACKAGES } from '@/lib/dana';
+import { TOKEN_PACKAGES, getDanaAccessToken } from '@/lib/dana';
 import logger from '@/lib/logger';
 import { trackEvent, EventType } from '@/lib/analytics';
 import crypto from 'crypto';
 import { DANA_API_KEY, DANA_API_SECRET, DANA_MERCHANT_ID, DANA_ENVIRONMENT, DANA_CLIENT_ID, DANA_CLIENT_SECRET, getUrl } from '@/lib/env';
 import { db } from '@/lib/db';
 import { transactions } from '@/lib/db/schema';
-import { sql } from 'drizzle-orm';
-import { eq } from 'drizzle-orm';
+import { sql, eq } from 'drizzle-orm';
 
 // DANA API base URL based on environment
 const DANA_API_BASE_URL = DANA_ENVIRONMENT === 'production'
@@ -23,6 +22,67 @@ const MAX_REQUESTS_PER_WINDOW = 5; // 5 requests per minute per IP
 
 // Store rate limiting data
 const rateLimitTracker: Record<string, { count: number, resetTime: number }> = {};
+
+// Add a helper function for retry logic at the top of the file after imports
+
+/**
+ * Helper function to retry a promise-based operation with exponential backoff
+ * @param operation Function that returns a promise to retry
+ * @param maxRetries Maximum number of retry attempts
+ * @param baseDelay Base delay in ms (will be multiplied by 2^retryCount)
+ * @returns Result of the operation or throws the last error
+ */
+async function retryWithBackoff<T>(
+  operation: () => Promise<T>, 
+  maxRetries: number = 3,
+  baseDelay: number = 300
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let retryCount = 0; retryCount <= maxRetries; retryCount++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      if (retryCount === maxRetries) {
+        break;
+      }
+      
+      const delay = baseDelay * Math.pow(2, retryCount);
+      logger.info(`Retrying operation after ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError || new Error('Operation failed after retries');
+}
+
+// Add this function after the retryWithBackoff function
+
+/**
+ * Get a user-friendly error message based on DANA error code
+ * @param responseCode DANA response code
+ * @returns User-friendly error message
+ */
+function getDanaErrorMessage(responseCode: string): string {
+  const errorMessages: Record<string, string> = {
+    '4000000': 'Bad request. Please check your payment details.',
+    '4010000': 'Authentication failed. Please try again later.',
+    '4010003': 'Access token expired. Please try again.',
+    '4040000': 'Requested resource not found.',
+    '4040018': 'Inconsistent payment request.',
+    '4080000': 'Request timeout. Please try again.',
+    '4290000': 'Too many requests. Please try again later.',
+    '5000000': 'Internal server error. Please try again later.',
+    '5030000': 'Service unavailable. Please try again later.',
+    '6010000': 'Invalid parameter format.',
+    '6040000': 'Business rule validation failed.',
+    '6220000': 'Duplicate transaction detected.'
+  };
+  
+  return errorMessages[responseCode] || 'Payment processing failed. Please try again later.';
+}
 
 // Create a payment for purchasing tokens
 export async function POST(request: NextRequest) {
@@ -128,6 +188,24 @@ export async function POST(request: NextRequest) {
     logger.info('Creating Dana payment', { email, userId, packageId, amount, description });
 
     try {
+      // First, get a B2B access token from DANA
+      logger.info('Acquiring DANA B2B access token');
+      
+      const accessToken = await getDanaAccessToken();
+      
+      if (!accessToken) {
+        logger.error('Failed to acquire DANA B2B access token');
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: 'Failed to authenticate with payment provider' 
+          },
+          { status: 500 }
+        );
+      }
+      
+      logger.info('Successfully acquired DANA B2B access token');
+      
       // Generate unique order reference number (partnerReferenceNo)
       const timestamp = Math.floor(Date.now()).toString();
       const partnerReferenceNo = `DEKAVE${userId.substring(0, 6)}${timestamp.substring(timestamp.length - 9)}`;
@@ -256,7 +334,7 @@ export async function POST(request: NextRequest) {
         .toLowerCase();
       
       // Generate signature using HMAC-SHA512 as per documentation
-      const signatureBase = `POST:${DANA_PAYMENT_ENDPOINT}:${DANA_CLIENT_SECRET}:${payloadHash}:${danaTimestamp}`;
+      const signatureBase = `POST:${DANA_PAYMENT_ENDPOINT}:${accessToken}:${payloadHash}:${danaTimestamp}`;
       
       logger.info('Generating signature', { 
         signatureBasePreview: signatureBase.substring(0, 50) + '...',
@@ -269,10 +347,10 @@ export async function POST(request: NextRequest) {
         .update(signatureBase)
         .digest('base64');
       
-      // Create headers as specified in the DANA documentation
+      // Update headers to use the actual access token
       const headers = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${DANA_CLIENT_SECRET}`, // Use client secret as bearer token
+        'Authorization': `Bearer ${accessToken}`, // Use the access token from B2B token request
         'X-TIMESTAMP': danaTimestamp,
         'X-SIGNATURE': signature,
         'ORIGIN': getUrl('/').replace(/^https?:\/\//, '').replace(/\/$/, ''),
@@ -293,12 +371,25 @@ export async function POST(request: NextRequest) {
         }
       });
       
-      // Make the API request to Dana
-      const response = await fetch(`${DANA_API_BASE_URL}${DANA_PAYMENT_ENDPOINT}`, {
-        method: 'POST',
-        headers,
-        body: stringifiedPayload
-      });
+      // Make the API request to Dana with retry logic for 5xx errors
+      const response = await retryWithBackoff(
+        async () => {
+          const resp = await fetch(`${DANA_API_BASE_URL}${DANA_PAYMENT_ENDPOINT}`, {
+            method: 'POST',
+            headers,
+            body: stringifiedPayload
+          });
+          
+          // Only retry on 5xx server errors
+          if (resp.status >= 500 && resp.status < 600) {
+            throw new Error(`Server error: ${resp.status}`);
+          }
+          
+          return resp;
+        }, 
+        2, // Max 2 retries (3 attempts total)
+        500 // Start with 500ms delay
+      );
       
       // Log response details
       logger.info('Dana API response received', {
@@ -400,10 +491,13 @@ export async function POST(request: NextRequest) {
       } 
       // Handle error response
       else {
+        const errorMessage = getDanaErrorMessage(data.responseCode);
+        
         logger.error('Dana payment failed - API returned error', {
           status: response.status,
           responseCode: data.responseCode,
-          responseMessage: data.responseMessage
+          responseMessage: data.responseMessage,
+          friendlyMessage: errorMessage
         });
         
         // Track failure
@@ -422,7 +516,7 @@ export async function POST(request: NextRequest) {
             success: false,
             error: 'Payment initiation failed',
             code: data.responseCode,
-            message: data.responseMessage || 'Unknown error from payment provider'
+            message: errorMessage
           },
           { status: 400 }
         );

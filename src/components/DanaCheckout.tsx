@@ -76,7 +76,9 @@ export function DanaCheckout({ onClose, isNewUser = false }: DanaCheckoutProps) 
           timestamp: new Date().toISOString()
         });
         
-        setError(data.message || data.error || 'Failed to create payment. Please try again.');
+        // Use the friendly error message from the API if available
+        const errorMessage = data.message || data.error || 'Failed to create payment. Please try again.';
+        setError(errorMessage);
         setIsLoading(false);
         return;
       }
