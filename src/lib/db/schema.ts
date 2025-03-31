@@ -25,6 +25,7 @@ export const transactions = pgTable('transactions', {
     priceId?: string;
     email?: string;
     paymentIntentId?: string;
+    sessionId?: string;
     amount?: number;
     previousPurchase?: boolean;
     error?: string;

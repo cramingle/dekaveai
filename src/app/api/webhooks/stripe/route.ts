@@ -32,6 +32,9 @@ export async function POST(req: Request) {
 
     // Handle different webhook events
     switch (event.type) {
+      case 'checkout.session.completed':
+        return handleCheckoutCompleted(event.data.object);
+
       case 'payment_intent.succeeded':
         return handlePaymentSuccess(event.data.object);
 
@@ -48,6 +51,70 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error('Webhook error:', error);
     return new NextResponse('Webhook error', { status: 500 });
+  }
+}
+
+async function handleCheckoutCompleted(session: any) {
+  const { metadata, customer } = session;
+
+  if (!metadata?.userId || !metadata?.packageId) {
+    console.error('Missing metadata in checkout session');
+    return new NextResponse('Missing metadata', { status: 400 });
+  }
+
+  const packageDetails = TOKEN_PACKAGES[metadata.packageId as keyof typeof TOKEN_PACKAGES];
+  if (!packageDetails) {
+    console.error('Invalid package ID in metadata');
+    return new NextResponse('Invalid package', { status: 400 });
+  }
+
+  try {
+    // Create transaction record
+    const [transaction] = await db.insert(transactions)
+      .values({
+        id: crypto.randomUUID(),
+        userId: metadata.userId,
+        packageId: metadata.packageId,
+        amount: session.amount_total ?? 0,
+        status: 'completed',
+        provider: 'stripe',
+        metadata: {
+          customerId: customer?.id,
+          sessionId: session.id,
+          amount: session.amount_total ?? 0
+        }
+      })
+      .returning();
+
+    // Update user tokens and tier
+    const user = await db.select().from(users).where(eq(users.id, metadata.userId)).limit(1).then(rows => rows[0]);
+
+    if (!user) {
+      console.error('User not found');
+      return new NextResponse('User not found', { status: 404 });
+    }
+
+    await db.update(users)
+      .set({
+        tokens: (user.tokens || 0) + packageDetails.tokens,
+        tier: packageDetails.tier,
+        stripeCustomerId: customer
+      })
+      .where(eq(users.id, metadata.userId));
+
+    console.log('Checkout completed:', {
+      userId: metadata.userId,
+      packageId: metadata.packageId,
+      amount: session.amount_total,
+      tokens: packageDetails.tokens,
+      status: 'completed',
+      customer
+    });
+
+    return new NextResponse('Checkout processed successfully', { status: 200 });
+  } catch (error) {
+    console.error('Error processing checkout completion:', error);
+    return new NextResponse('Error processing checkout', { status: 500 });
   }
 }
 
