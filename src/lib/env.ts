@@ -18,7 +18,6 @@ const envSchema = z.object({
   // Stripe
   STRIPE_SECRET_KEY: z.string().min(1),
   STRIPE_WEBHOOK_SECRET: z.string().min(1),
-  STRIPE_PRICE_ID: z.string().min(1),
   
   // OpenAI
   OPENAI_API_KEY: z.string().min(1),
@@ -27,7 +26,6 @@ const envSchema = z.object({
   BLOB_READ_WRITE_TOKEN: z.string().min(1),
   
   // Other
-  REPLICATE_API_TOKEN: z.string().min(1),
   GOOGLE_CLIENT_ID: z.string().min(1),
   GOOGLE_CLIENT_SECRET: z.string().min(1),
 });
@@ -47,7 +45,6 @@ export const env = envSchema.parse({
   // Stripe
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
-  STRIPE_PRICE_ID: process.env.STRIPE_PRICE_ID,
   
   // OpenAI
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
@@ -56,7 +53,6 @@ export const env = envSchema.parse({
   BLOB_READ_WRITE_TOKEN: process.env.BLOB_READ_WRITE_TOKEN,
   
   // Other
-  REPLICATE_API_TOKEN: process.env.REPLICATE_API_TOKEN,
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
 });
