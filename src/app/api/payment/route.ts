@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { TOKEN_PACKAGES, createCheckoutSession } from '@/lib/stripe';
+import { createCheckoutSession } from '@/lib/stripe';
+import { TOKEN_PACKAGES } from '@/lib/stripe/constants';
 import logger from '@/lib/logger';
 import { trackEvent, EventType } from '@/lib/analytics';
 

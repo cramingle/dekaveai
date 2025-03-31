@@ -2,27 +2,9 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { users, transactions } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { TOKEN_PACKAGES } from '@/lib/stripe';
+import { TOKEN_PACKAGES } from '@/lib/stripe/constants';
 import { env } from '@/lib/env';
 import Stripe from 'stripe';
-
-declare function mcp_stripe_list_payment_intents(params: {
-  customer?: string;
-  limit?: number;
-}): Promise<{
-  data: Array<{
-    id: string;
-    amount: number;
-    status: string;
-    created: number;
-    customer: string;
-    metadata: {
-      packageId?: string;
-      userId?: string;
-      transactionId?: string;
-    };
-  }>;
-}>;
 
 export async function POST(req: Request) {
   try {
