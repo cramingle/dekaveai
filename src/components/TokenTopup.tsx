@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { useAuth } from '@/lib/auth';
 
 type TokenPackage = {
   id: string;
@@ -7,28 +8,96 @@ type TokenPackage = {
   price: number;
   discount: number;
   tier: 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord';
+  priceId: string;
 };
 
 type TokenTopupProps = {
-  onPurchase: (packageId: string) => void;
-  isLoading?: boolean;
   onClose: () => void;
 };
 
-export function TokenTopup({ onPurchase, isLoading = false, onClose }: TokenTopupProps) {
+export function TokenTopup({ onClose }: TokenTopupProps) {
   const [selectedPackage, setSelectedPackage] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
   
   const tokenPackages: TokenPackage[] = [
-    { id: 'basic', tokens: 100000, price: 5, discount: 0, tier: 'Pioneer' },
-    { id: 'value', tokens: 250000, price: 10, discount: 20, tier: 'Voyager' },
-    { id: 'pro', tokens: 600000, price: 20, discount: 33, tier: 'Dominator' },
-    { id: 'max', tokens: 1000000, price: 25, discount: 50, tier: 'Overlord' },
+    { 
+      id: 'basic', 
+      tokens: 100000, 
+      price: 5, 
+      discount: 0, 
+      tier: 'Pioneer',
+      priceId: 'price_1R8eFVBfSVCq5UYnr5Aaxfex'
+    },
+    { 
+      id: 'value', 
+      tokens: 250000, 
+      price: 10, 
+      discount: 20, 
+      tier: 'Voyager',
+      priceId: 'price_1R8eFaBfSVCq5UYnYPhE1KZG'
+    },
+    { 
+      id: 'pro', 
+      tokens: 600000, 
+      price: 20, 
+      discount: 33, 
+      tier: 'Dominator',
+      priceId: 'price_1R8eFdBfSVCq5UYnDerAMBOK'
+    },
+    { 
+      id: 'max', 
+      tokens: 1000000, 
+      price: 25, 
+      discount: 50, 
+      tier: 'Overlord',
+      priceId: 'price_1R8eFgBfSVCq5UYnbCgskl2Y'
+    },
   ];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedPackage) {
-      onPurchase(selectedPackage);
+    
+    if (!selectedPackage || !user?.email) {
+      setError('Please select a package and ensure you are logged in.');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const selectedPkg = tokenPackages.find(pkg => pkg.id === selectedPackage);
+      if (!selectedPkg) {
+        throw new Error('Invalid package selected');
+      }
+
+      // Create payment link using MCP Stripe tool
+      const response = await fetch('/api/create-payment-link', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          priceId: selectedPkg.priceId,
+          email: user.email,
+          userId: user.id,
+          packageId: selectedPkg.id
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create payment link');
+      }
+
+      // Redirect to payment URL
+      window.location.href = data.url;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+      setIsLoading(false);
     }
   };
   
@@ -95,6 +164,12 @@ export function TokenTopup({ onPurchase, isLoading = false, onClose }: TokenTopu
         </div>
         
         <div className="p-3 sm:p-6 overflow-y-auto max-h-[calc(100vh-150px)]">
+          {error && (
+            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm">
+              {error}
+            </div>
+          )}
+          
           <motion.form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
             <div className="grid grid-cols-1 gap-2 sm:gap-3">
               {tokenPackages.map((pkg, index) => (

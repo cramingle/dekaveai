@@ -41,29 +41,25 @@ export const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 // Database
 export const DATABASE_URL = process.env.DATABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('supabase', 'postgres');
 
-// Dana Payment
-export const DANA_ENABLED = process.env.DANA_ENABLED === 'true';
-export const DANA_ENVIRONMENT = (process.env.DANA_ENVIRONMENT || 'sandbox') as 'production' | 'sandbox';
-export const DANA_API_KEY = process.env.DANA_API_KEY || '';
-export const DANA_API_SECRET = process.env.DANA_API_SECRET || '';
-export const DANA_MERCHANT_ID = process.env.DANA_MERCHANT_ID || '';
-export const DANA_CLIENT_ID = process.env.DANA_CLIENT_ID || '';
-export const DANA_CLIENT_SECRET = process.env.DANA_CLIENT_SECRET || '';
-export const DANA_PRIVATE_KEY = process.env.DANA_PRIVATE_KEY || '';
+// Stripe Configuration
+export const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+export const STRIPE_PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+export const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+
+// Stripe Price IDs for different packages
+export const STRIPE_PRICE_IDS = {
+  basic: process.env.STRIPE_BASIC_PRICE_ID || 'price_1R8eFVBfSVCq5UYnr5Aaxfex',
+  value: process.env.STRIPE_VALUE_PRICE_ID || 'price_1R8eFaBfSVCq5UYnYPhE1KZG',
+  pro: process.env.STRIPE_PRO_PRICE_ID || 'price_1R8eFdBfSVCq5UYnDerAMBOK',
+  max: process.env.STRIPE_MAX_PRICE_ID || 'price_1R8eFgBfSVCq5UYnbCgskl2Y'
+} as const;
 
 // Log environment status on server-side only (to avoid client-side logs)
 if (typeof window === 'undefined') {
   console.log('Environment configuration loaded:', {
     NODE_ENV: process.env.NODE_ENV,
-    DANA_ENABLED,
-    DANA_ENVIRONMENT,
     BASE_URL,
     DATABASE_URL: DATABASE_URL ? '✓ Set' : '✗ Missing',
-    DANA_API_KEY: DANA_API_KEY ? '✓ Set' : '✗ Missing',
-    DANA_API_SECRET: DANA_API_SECRET ? '✓ Set' : '✗ Missing',
-    DANA_MERCHANT_ID: DANA_MERCHANT_ID ? '✓ Set' : '✗ Missing',
-    DANA_CLIENT_ID: DANA_CLIENT_ID ? '✓ Set' : '✗ Missing',
-    DANA_CLIENT_SECRET: DANA_CLIENT_SECRET ? '✓ Set' : '✗ Missing',
   });
 }
 
@@ -92,14 +88,9 @@ export const env = {
   SUPABASE_ANON_KEY,
   SUPABASE_SERVICE_KEY,
   DATABASE_URL,
-  DANA_ENABLED,
-  DANA_ENVIRONMENT,
-  DANA_API_KEY,
-  DANA_API_SECRET,
-  DANA_MERCHANT_ID,
-  DANA_CLIENT_ID,
-  DANA_CLIENT_SECRET,
-  DANA_PRIVATE_KEY,
+  STRIPE_SECRET_KEY,
+  STRIPE_PUBLISHABLE_KEY,
+  STRIPE_WEBHOOK_SECRET,
   IS_PRODUCTION,
   IS_DEVELOPMENT
 };
@@ -113,14 +104,9 @@ export default {
   SUPABASE_ANON_KEY,
   SUPABASE_SERVICE_KEY,
   DATABASE_URL,
-  DANA_ENABLED,
-  DANA_ENVIRONMENT,
-  DANA_API_KEY,
-  DANA_API_SECRET,
-  DANA_MERCHANT_ID,
-  DANA_CLIENT_ID,
-  DANA_CLIENT_SECRET,
-  DANA_PRIVATE_KEY,
+  STRIPE_SECRET_KEY,
+  STRIPE_PUBLISHABLE_KEY,
+  STRIPE_WEBHOOK_SECRET,
   IS_PRODUCTION,
   IS_DEVELOPMENT,
   getUrl

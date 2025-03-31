@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
 import { trackEvent, EventType } from '@/lib/analytics';
-import { DanaCheckout } from './DanaCheckout';
+import { TokenTopup } from '@/components/TokenTopup';
 
 type PaywallProps = {
   onClose: () => void;
@@ -17,12 +17,12 @@ type PaywallProps = {
 
 export function Paywall({ onClose, isLoading = false }: PaywallProps) {
   const { user, signInWithGoogle } = useAuth();
-  const [showDanaCheckout, setShowDanaCheckout] = useState(false);
+  const [showCheckout, setShowCheckout] = useState(false);
   const [error, setError] = useState('');
 
-  // Show Dana checkout immediately if user is already logged in
-  if (user && !showDanaCheckout) {
-    setShowDanaCheckout(true);
+  // Show checkout immediately if user is already logged in
+  if (user && !showCheckout) {
+    setShowCheckout(true);
   }
 
   const handleAuth = async () => {
@@ -58,8 +58,8 @@ export function Paywall({ onClose, isLoading = false }: PaywallProps) {
       exit={{ opacity: 0 }}
       transition={{ duration: 0.4 }}
     >
-      {showDanaCheckout ? (
-        <DanaCheckout onClose={onClose} isNewUser={true} />
+      {showCheckout ? (
+        <TokenTopup onClose={onClose} />
       ) : (
         <motion.div 
           className="w-full max-w-md bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl overflow-hidden"

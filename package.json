@@ -7,7 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "check-env": "node scripts/check-env.js"
+    "check-env": "node scripts/check-env.js",
+    "db:generate": "drizzle-kit generate:pg",
+    "db:push": "drizzle-kit push:pg",
+    "db:studio": "drizzle-kit studio",
+    "db:check": "drizzle-kit check:pg"
   },
   "dependencies": {
     "@auth/supabase-adapter": "^1.8.0",
@@ -20,6 +24,7 @@
     "drizzle-orm": "^0.41.0",
     "framer-motion": "^12.6.2",
     "gpt-tokenizer": "^2.9.0",
+    "lru-cache": "^11.1.0",
     "next": "15.2.4",
     "next-auth": "^4.24.11",
     "next-connect": "^1.0.0",
@@ -37,6 +42,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/uuid": "^10.0.0",
+    "drizzle-kit": "^0.20.18",
     "eslint": "^9",
     "eslint-config-next": "15.2.4",
     "tailwindcss": "^4",

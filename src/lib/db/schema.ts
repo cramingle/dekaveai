@@ -1,15 +1,46 @@
-import { pgTable, uuid, varchar, numeric, timestamp, json, text } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, integer, jsonb } from 'drizzle-orm/pg-core';
+import type { PgTableFn } from 'drizzle-orm/pg-core';
 
-// Transactions table schema
+export const users = pgTable('users', {
+  id: text('id').primaryKey(),
+  email: text('email').notNull(),
+  name: text('name'),
+  tokens: integer('tokens').default(0),
+  tier: text('tier').default('Pioneer'),
+  stripeCustomerId: text('stripe_customer_id'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+});
+
 export const transactions = pgTable('transactions', {
-  id: uuid('id').primaryKey().notNull(),
-  userId: uuid('user_id').notNull(),
-  packageId: varchar('package_id', { length: 255 }).notNull(),
-  amount: numeric('amount').notNull(),
-  status: varchar('status', { length: 50 }).notNull().default('PENDING'),
-  provider: varchar('provider', { length: 50 }).notNull(),
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id),
+  packageId: text('package_id').notNull(),
+  amount: integer('amount').notNull(),
+  status: text('status').notNull().default('pending'),
+  provider: text('provider').notNull().default('stripe'),
   description: text('description'),
-  metadata: json('metadata').$type<Record<string, any>>(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at')
-}); 
+  metadata: jsonb('metadata').$type<{
+    customerId?: string;
+    priceId?: string;
+    email?: string;
+    paymentIntentId?: string;
+    amount?: number;
+    previousPurchase?: boolean;
+    error?: string;
+    action?: string;
+  }>(),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+});
+
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+
+export type Transaction = typeof transactions.$inferSelect;
+export type NewTransaction = typeof transactions.$inferInsert;
+
+export type Schema = {
+  users: typeof users;
+  transactions: typeof transactions;
+}; 

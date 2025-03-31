@@ -3,84 +3,174 @@
 // This file will be replaced with Dana payment implementation
 // =========================================================
 
-import logger from './logger';
+import { db } from '@/lib/db';
+import { users } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
 
-// Dana Payment Integration Constants
-export const IS_PAYMENT_ENABLED = false; // Set to true once Dana implementation is complete
-export const PAYMENT_PROVIDER = 'dana';
+// Initialize Stripe
+// const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
+
+// Payment Integration Constants
+export const IS_PAYMENT_ENABLED = true;
+export const PAYMENT_PROVIDER = 'stripe';
 export const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
 
-// Dana requires several endpoint URLs for notifications 
-// 1. Payment Notification URL: Receives payment completion notifications
-// 2. Refund Notification URL: Receives refund completion notifications
-// 3. Payment Code Notification URL: Receives payment code notifications
-// 4. Redirect URL: Where customers are redirected after payment
+declare function mcp_stripe_create_customer(params: {
+  name: string;
+  email?: string;
+}): Promise<{ id: string }>;
 
-// Token package mapping - preserved from previous implementation
-export const TOKEN_PACKAGES = {
-  'basic': { tokens: 100000, tier: 'Pioneer' },
-  'value': { tokens: 250000, tier: 'Voyager' },
-  'pro': { tokens: 600000, tier: 'Dominator' },
-  'max': { tokens: 1000000, tier: 'Overlord' },
+declare function mcp_stripe_create_payment_link(params: {
+  price: string;
+  quantity: number;
+}): Promise<{ url: string }>;
+
+declare function mcp_stripe_list_payment_intents(params: {
+  customer?: string;
+  limit?: number;
+}): Promise<{
+  data: Array<{
+    id: string;
+    amount: number;
+    status: string;
+    created: number;
+  }>;
+}>;
+
+export type TokenPackage = {
+  id: string;
+  name: string;
+  tokens: number;
+  price: number;
+  tier: 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord';
+  priceId: string;
 };
 
-// Mock function that will be replaced with actual Dana implementation
+export async function createOrRetrieveCustomer(userId: string, email: string, name: string) {
+  try {
+    // Check if user already has a Stripe customer ID
+    const user = await db.select().from(users).where(eq(users.id, userId)).limit(1).then(rows => rows[0]);
+
+    if (user?.stripeCustomerId) {
+      return user.stripeCustomerId;
+    }
+
+    // Create new Stripe customer
+    const customer = await mcp_stripe_create_customer({
+      name,
+      email,
+    });
+
+    // Update user with Stripe customer ID
+    await db.update(users)
+      .set({ stripeCustomerId: customer.id })
+      .where(eq(users.id, userId));
+
+    return customer.id;
+  } catch (error) {
+    console.error('Error in createOrRetrieveCustomer:', error);
+    throw error;
+  }
+}
+
 export async function createCheckoutSession(
-  customerEmail: string,
+  email: string,
   successUrl: string,
   cancelUrl: string,
   userId: string,
-  packageId: string = 'basic'
-): Promise<string | null> {
-  logger.warn('Payment system is not yet implemented. Dana integration pending.');
-  return null;
+  packageId: string
+) {
+  try {
+    // Create or retrieve customer
+    const customerId = await createOrRetrieveCustomer(userId, email, email);
+
+    // Get package details
+    const packageDetails = TOKEN_PACKAGES[packageId as keyof typeof TOKEN_PACKAGES];
+    if (!packageDetails) {
+      throw new Error('Invalid package selected');
+    }
+
+    // Create payment link
+    const paymentLink = await mcp_stripe_create_payment_link({
+      price: packageDetails.priceId,
+      quantity: 1
+    });
+
+    return paymentLink.url;
+  } catch (error) {
+    console.error('Error creating checkout session:', error);
+    return null;
+  }
 }
 
-// Mock function that will be replaced with actual Dana implementation
-export async function verifyPayment(paymentId: string): Promise<boolean> {
-  logger.warn('Payment verification is not yet implemented. Dana integration pending.');
-  return false;
+export async function verifyPayment(sessionId: string): Promise<boolean> {
+  try {
+    // Get payment details using sessionId
+    const payments = await mcp_stripe_list_payment_intents({
+      limit: 1
+    });
+
+    // Check if payment exists and is successful
+    return payments.data.some(payment => 
+      payment.id === sessionId && payment.status === 'succeeded'
+    );
+  } catch (error) {
+    console.error('Error verifying payment:', error);
+    return false;
+  }
 }
 
-// Mock function that will be replaced with actual Dana implementation
-export async function getCustomerFromSession(paymentId: string): Promise<{
-  email?: string;
-  userId?: string;
-  packageId?: string;
-} | null> {
-  logger.warn('Customer retrieval is not yet implemented. Dana integration pending.');
-  return null;
+export async function getPaymentHistory(customerId: string) {
+  try {
+    const paymentIntents = await mcp_stripe_list_payment_intents({
+      customer: customerId,
+      limit: 10 // Get last 10 payments
+    });
+
+    return paymentIntents.data.map(payment => ({
+      id: payment.id,
+      amount: payment.amount / 100, // Convert cents to dollars
+      status: payment.status,
+      date: new Date(payment.created * 1000).toISOString()
+    }));
+  } catch (error) {
+    console.error('Error fetching payment history:', error);
+    throw error;
+  }
 }
 
-/*
- * DANA PAYMENT INTEGRATION GUIDE
- * 
- * Based on the provided documentation, Dana requires:
- * 
- * 1. Endpoint URLs Initialization:
- *    - Finish Payment URL: Where payment notifications are sent
- *    - Finish Refund URL: Where refund notifications are sent
- *    - Finish Payment Code URL: Where payment code notifications are sent
- *    - Finish Redirect URL: Where customers are redirected after payment
- * 
- * 2. Implementation Steps:
- *    a. Create API routes for each of these endpoints in Next.js
- *    b. Implement Dana API client using their SDK or REST API
- *    c. Handle payment creation, verification, and webhook processing
- *    d. Update database with payment status
- * 
- * 3. Suggested Files Structure:
- *    - src/lib/dana.ts - Main Dana client implementation
- *    - src/app/api/webhooks/dana/payment/route.ts - Payment notification endpoint
- *    - src/app/api/webhooks/dana/refund/route.ts - Refund notification endpoint
- *    - src/app/api/webhooks/dana/payment-code/route.ts - Payment code endpoint
- *    - src/app/api/payment/route.ts - Modify existing route to use Dana instead of Stripe
- * 
- * 4. Environment Variables Needed:
- *    - DANA_API_KEY
- *    - DANA_API_SECRET
- *    - DANA_MERCHANT_ID
- *    - DANA_ENVIRONMENT (sandbox/production)
- */
-
-export default null; 
+// Token package configuration
+export const TOKEN_PACKAGES = {
+  basic: {
+    id: 'basic',
+    name: 'Pioneer Package',
+    tokens: 100000,
+    price: 5,
+    tier: 'Pioneer' as const,
+    priceId: 'price_1R8eFVBfSVCq5UYnr5Aaxfex'
+  },
+  value: {
+    id: 'value',
+    name: 'Voyager Package',
+    tokens: 250000,
+    price: 10,
+    tier: 'Voyager' as const,
+    priceId: 'price_1R8eFaBfSVCq5UYnYPhE1KZG'
+  },
+  pro: {
+    id: 'pro',
+    name: 'Dominator Package',
+    tokens: 600000,
+    price: 20,
+    tier: 'Dominator' as const,
+    priceId: 'price_1R8eFdBfSVCq5UYnDerAMBOK'
+  },
+  max: {
+    id: 'max',
+    name: 'Overlord Package',
+    tokens: 1000000,
+    price: 25,
+    tier: 'Overlord' as const,
+    priceId: 'price_1R8eFgBfSVCq5UYnbCgskl2Y'
+  }
+} as const;
