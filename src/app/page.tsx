@@ -3,15 +3,10 @@
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PhotoUpload } from '@/components/PhotoUpload';
-import { PromptInput } from '@/components/PromptInput';
-import { ResultsView } from '@/components/ResultsView';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { Paywall } from '@/components/Paywall';
 import { TokenTopup } from '@/components/TokenTopup';
-import { DanaCheckout } from '@/components/DanaCheckout';
 import { useAuth } from '@/lib/auth';
-import { createUser } from '@/lib/supabase';
 import { trackEvent, EventType } from '@/lib/analytics';
 
 interface UploadedImage {
@@ -700,9 +695,8 @@ export default function Home() {
         
         {/* Token Topup overlay - for authenticated users */}
         {showTokenTopup && (
-          <DanaCheckout 
+          <TokenTopup 
             onClose={() => setShowTokenTopup(false)}
-            isNewUser={false}
           />
         )}
       </AnimatePresence>
