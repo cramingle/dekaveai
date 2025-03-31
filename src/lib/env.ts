@@ -7,7 +7,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   VERCEL_ENV: z.enum(['development', 'preview', 'production']).default('development'),
   
-  // Database
+  // Database - derived from Supabase URL if not provided
   DATABASE_URL: z.string().optional(),
   
   // Supabase
@@ -34,8 +34,8 @@ export const env = envSchema.parse({
   NODE_ENV: process.env.NODE_ENV,
   VERCEL_ENV: process.env.VERCEL_ENV,
   
-  // Database
-  DATABASE_URL: process.env.DATABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('supabase', 'postgres'),
+  // Database URL - convert from Supabase URL if not provided
+  DATABASE_URL: process.env.DATABASE_URL || process.env.SUPABASE_URL?.replace('https://', 'postgresql://postgres:postgres@')?.replace('.supabase.co', '.supabase.co:5432/postgres'),
   
   // Supabase
   SUPABASE_URL: process.env.SUPABASE_URL,
