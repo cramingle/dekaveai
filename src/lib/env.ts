@@ -23,6 +23,9 @@ const envSchema = z.object({
   // OpenAI
   OPENAI_API_KEY: z.string().min(1),
   
+  // Vercel Blob Storage
+  BLOB_READ_WRITE_TOKEN: z.string().min(1),
+  
   // Other
   REPLICATE_API_TOKEN: z.string().min(1),
   GOOGLE_CLIENT_ID: z.string().min(1),
@@ -48,6 +51,9 @@ export const env = envSchema.parse({
   
   // OpenAI
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  
+  // Vercel Blob Storage
+  BLOB_READ_WRITE_TOKEN: process.env.BLOB_READ_WRITE_TOKEN,
   
   // Other
   REPLICATE_API_TOKEN: process.env.REPLICATE_API_TOKEN,
