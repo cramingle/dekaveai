@@ -17,15 +17,15 @@ const envSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().min(1),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
   
-  // Stripe
-  STRIPE_SECRET_KEY: z.string().min(1),
-  STRIPE_WEBHOOK_SECRET: z.string().min(1),
+  // Stripe - Optional since we're using MCP tools
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
   
   // OpenAI
   OPENAI_API_KEY: z.string().min(1),
   
-  // Vercel Blob Storage
-  BLOB_READ_WRITE_TOKEN: z.string().min(1),
+  // Vercel Blob Storage - Optional for now
+  BLOB_READ_WRITE_TOKEN: z.string().optional(),
   
   // Other
   GOOGLE_CLIENT_ID: z.string().min(1),
