@@ -3,20 +3,21 @@
 
 import { z } from 'zod';
 
-// Debug logging for environment variables (server-side only)
-if (typeof window === 'undefined') {
-  console.log('Loading environment variables...');
-  console.log('OPENAI_API_KEY present:', !!process.env.OPENAI_API_KEY);
-  console.log('NODE_ENV:', process.env.NODE_ENV);
-  console.log('VERCEL_ENV:', process.env.VERCEL_ENV);
-}
+// Debug logging for environment variables
+const debugEnv = (context: string, vars: Record<string, any>) => {
+  console.log(`[${context}] Environment variables:`, 
+    Object.fromEntries(
+      Object.entries(vars).map(([key, value]) => [key, value ? '✓ Set' : '✗ Missing'])
+    )
+  );
+};
 
 // Client-side environment schema (only public variables)
 const clientEnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   VERCEL_ENV: z.enum(['development', 'preview', 'production']).default('development'),
   
-  // Supabase public variables
+  // Supabase public variables - these must be available on the client
   NEXT_PUBLIC_SUPABASE_URL: z.string().min(1),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
 });
@@ -50,8 +51,10 @@ const serverEnvSchema = z.object({
 });
 
 // Parse environment variables based on runtime context
-export const env = typeof window === 'undefined' 
-  ? serverEnvSchema.parse({
+const parseEnv = () => {
+  if (typeof window === 'undefined') {
+    // Server-side
+    const parsed = serverEnvSchema.parse({
       NODE_ENV: process.env.NODE_ENV,
       VERCEL_ENV: process.env.VERCEL_ENV,
       DATABASE_URL: process.env.DATABASE_URL || process.env.SUPABASE_URL?.replace('https://', 'postgresql://postgres:postgres@')?.replace('.supabase.co', '.supabase.co:5432/postgres'),
@@ -66,13 +69,23 @@ export const env = typeof window === 'undefined'
       BLOB_READ_WRITE_TOKEN: process.env.BLOB_READ_WRITE_TOKEN,
       GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
       GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
-    })
-  : clientEnvSchema.parse({
+    });
+    debugEnv('server', parsed);
+    return parsed;
+  } else {
+    // Client-side
+    const parsed = clientEnvSchema.parse({
       NODE_ENV: process.env.NODE_ENV,
       VERCEL_ENV: process.env.VERCEL_ENV,
       NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
       NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     });
+    debugEnv('client', parsed);
+    return parsed;
+  }
+};
+
+export const env = parseEnv();
 
 // Base URL for the application
 export const BASE_URL = (() => {
