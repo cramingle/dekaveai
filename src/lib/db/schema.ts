@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, integer, jsonb, uuid, boolean } from 'drizzle-orm/pg-core';
 import type { PgTableFn } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
@@ -35,13 +35,35 @@ export const transactions = pgTable('transactions', {
   updatedAt: timestamp('updated_at').defaultNow()
 });
 
+export const brandProfiles = pgTable('brand_profiles', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  profileData: jsonb('profile_data').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export const brandTemplates = pgTable('brand_templates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull().unique(),
+  profile: jsonb('profile').notNull(),
+  isDefault: boolean('is_default').notNull().default(false),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow()
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 
 export type Transaction = typeof transactions.$inferSelect;
 export type NewTransaction = typeof transactions.$inferInsert;
 
+export type BrandTemplate = typeof brandTemplates.$inferSelect;
+export type NewBrandTemplate = typeof brandTemplates.$inferInsert;
+
 export type Schema = {
   users: typeof users;
   transactions: typeof transactions;
+  brandProfiles: typeof brandProfiles;
+  brandTemplates: typeof brandTemplates;
 }; 

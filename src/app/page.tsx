@@ -8,6 +8,7 @@ import { Paywall } from '@/components/Paywall';
 import { TokenTopup } from '@/components/TokenTopup';
 import { useAuth } from '@/lib/auth';
 import { trackEvent, EventType } from '@/lib/analytics';
+import { extractBrandProfile, saveBrandProfile } from '@/lib/brand-profile';
 
 interface UploadedImage {
   id: string;
@@ -56,6 +57,8 @@ export default function Home() {
     promptMultiplier: 1.5,
     imageMultiplier: 2,
   });
+  const [isAnalyzingBrand, setIsAnalyzingBrand] = useState<boolean>(false);
+  const [brandProfileAnalyzed, setBrandProfileAnalyzed] = useState<boolean>(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -118,7 +121,7 @@ export default function Home() {
     return tokenCost;
   };
   
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     const newImages = files.map(file => ({
       id: `img-${Math.random().toString(36).substr(2, 9)}-${Date.now()}`,
@@ -127,6 +130,25 @@ export default function Home() {
     }));
     setUploadedImages(prev => [...prev, ...newImages]);
     setShowDropzone(false);
+    
+    // Analyze brand profile if this is the first image
+    if (!brandProfileAnalyzed && newImages.length > 0) {
+      setIsAnalyzingBrand(true);
+      const profile = await extractBrandProfile(newImages[0].url);
+      if (profile && user?.id) {
+        await saveBrandProfile(user.id, profile);
+      }
+      setIsAnalyzingBrand(false);
+      setBrandProfileAnalyzed(true);
+      
+      // Add system message to chat history
+      setChatHistory(prev => [...prev, {
+        id: `system-${Date.now()}`,
+        type: 'result',
+        content: "I understand your brand profile. Now, tell me what kind of ad you'd like to create.",
+        timestamp: Date.now()
+      }]);
+    }
     
     // Track image upload event
     trackEvent(EventType.IMAGE_UPLOAD, {
@@ -453,7 +475,7 @@ export default function Home() {
                   <textarea
                     value={userPrompt}
                     onChange={(e) => setUserPrompt(e.target.value)}
-                    placeholder="Upload a product photo to begin..."
+                    placeholder="Upload an image that represents your brand's identity and style..."
                     className="w-full bg-transparent border-none px-6 py-4 text-white placeholder-zinc-500 focus:outline-none resize-none"
                     style={{minHeight: '56px'}}
                     disabled={true}
@@ -586,6 +608,20 @@ export default function Home() {
         </AnimatePresence>
       </div>
 
+      {/* Loading indicator for brand analysis */}
+      {isAnalyzingBrand && (
+        <motion.div 
+          className="flex flex-col items-center justify-center py-8 w-full"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          <LoadingSpinner />
+          <p className="text-zinc-400 mt-4">Analyzing your brand profile...</p>
+        </motion.div>
+      )}
+
       {/* Input area - Only show when images are uploaded or chat has started */}
       {(uploadedImages.length > 0 || chatHistory.length > 0) && (
         <motion.div 
@@ -594,24 +630,15 @@ export default function Home() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          {/* Token usage estimate */}
-          {userPrompt.trim().length > 0 && uploadedImages.length > 0 && !isGenerating && (
-            <div className="w-full mb-2" style={{ maxWidth: '85%', marginLeft: 'auto', marginRight: 'auto' }}>
-              <p className="text-xs text-zinc-500">
-                Estimated cost: {calculateTokenUsage(userPrompt, uploadedImages)} token{calculateTokenUsage(userPrompt, uploadedImages) !== 1 ? 's' : ''}
-              </p>
-            </div>
-          )}
-          
           <div className="max-w-3xl mx-auto">
             <div className="relative rounded-2xl bg-zinc-900/50 backdrop-blur-sm border border-white/10 overflow-hidden">
               <textarea
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
-                placeholder={uploadedImages.length ? "Describe your marketing vision..." : "Upload a product photo to begin..."}
+                placeholder={brandProfileAnalyzed ? "Describe the ad you want to create..." : "Upload a brand image to begin..."}
                 className="w-full bg-transparent border-none px-6 py-4 text-white placeholder-zinc-500 focus:outline-none resize-none"
                 style={{minHeight: '56px'}}
-                disabled={!uploadedImages.length || isGenerating}
+                disabled={!uploadedImages.length || isGenerating || !brandProfileAnalyzed}
               />
               
               <div className="absolute bottom-2 right-2 flex space-x-2 items-center">

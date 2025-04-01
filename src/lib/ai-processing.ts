@@ -98,51 +98,45 @@ function getConversationManager(userId: string): ConversationManager {
   return userConversations.get(userId)!;
 }
 
-// Load template from JSON file
+// Update the function to fetch from Supabase
 export async function loadBrandTemplate(templateName: string): Promise<any> {
   try {
-    // Instead of reading from the file system, use a module import approach
-    // which works in serverless environments like Vercel
-    
-    // Define templates inline - in production these would likely come from a database
-    const templates: Record<string, any> = {
-      sportsDrink: {
-        "brand_style_profile": {
-          "messaging_style": "energetic, motivational, performance-focused",
-          "typography": "bold, sans-serif, dynamic",
-          "color_scheme": "vibrant blues, energetic reds, and clean whites",
-          "product_placement": "action shots, prominently featured",
-          "layout_structure": "dynamic, asymmetrical with strong movement"
-        }
-      },
-      luxuryFashion: {
-        "brand_style_profile": {
-          "messaging_style": "sophisticated, exclusive, aspirational",
-          "typography": "elegant, serif, refined",
-          "color_scheme": "monochromatic, gold accents, muted tones",
-          "product_placement": "minimalistic, artistic, center-stage",
-          "layout_structure": "balanced, generous whitespace, geometric"
-        }
-      },
-      organicFood: {
-        "brand_style_profile": {
-          "messaging_style": "authentic, wholesome, sustainable",
-          "typography": "friendly, natural, approachable",
-          "color_scheme": "earthy greens, warm browns, natural palette",
-          "product_placement": "ingredient-focused, context-rich, lifestyle",
-          "layout_structure": "clean, organized, with natural elements"
-        }
-      }
-      // Add more templates as needed
-    };
-    
-    // Check if the requested template exists
-    if (!templates[templateName]) {
-      console.warn(`Template ${templateName} not found, using default template`);
-      return templates.sportsDrink; // Fallback to a default template
+    // Create Supabase client
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+
+    // Fetch template from brand_templates table
+    const { data: template, error } = await supabase
+      .from('brand_templates')
+      .select('*')
+      .eq('name', templateName)
+      .single();
+
+    if (error) {
+      console.error('Error fetching template:', error);
+      throw error;
     }
-    
-    return templates[templateName];
+
+    if (!template) {
+      // Fetch default template if requested template not found
+      const { data: defaultTemplate, error: defaultError } = await supabase
+        .from('brand_templates')
+        .select('*')
+        .eq('name', 'sportsDrink')
+        .single();
+
+      if (defaultError || !defaultTemplate) {
+        throw new Error('No templates found in database');
+      }
+
+      console.warn(`Template ${templateName} not found, using default template`);
+      return defaultTemplate.profile;
+    }
+
+    return template.profile;
   } catch (error) {
     console.error(`Error loading template ${templateName}:`, error);
     throw new Error(`Failed to load template ${templateName}. Please try again.`);
@@ -332,20 +326,94 @@ async function storeGeneratedImage(imageUrl: string): Promise<string> {
   }
 }
 
-// Process a user's request and track costs
+// Add new interface for brand analysis
+interface BrandProfile {
+  brandStyle: string;
+  colorPalette: string[];
+  visualElements: string[];
+  moodAndTone: string;
+  targetAudience: string;
+  industryCategory: string;
+  timestamp: string;
+}
+
+// Add specialized function for brand analysis
+export async function analyzeBrandProfile(imageUrl: string): Promise<{analysis: BrandProfile, tokenUsage: number}> {
+  try {
+    const systemPrompt = "You are a brand identity expert who analyzes visual brand elements and extracts key characteristics.";
+    const userPrompt = `Analyze this brand image and extract key brand elements. Focus on:
+1. Overall brand style and aesthetic
+2. Color palette (provide as array of color descriptions)
+3. Key visual elements and symbols (provide as array)
+4. Mood and tone
+5. Target audience indicators
+6. Industry category
+
+Provide the analysis in a structured JSON format matching the BrandProfile interface.`;
+    
+    // Count input tokens for cost calculation
+    const inputTokens = countTokens(systemPrompt) + countTokens(userPrompt);
+    
+    const response = await openai.chat.completions.create({
+      model: "gpt-4-vision-preview",
+      messages: [
+        {
+          role: "system",
+          content: systemPrompt
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: userPrompt
+            },
+            {
+              type: "image_url",
+              image_url: { url: imageUrl }
+            }
+          ]
+        }
+      ],
+      temperature: 0.5, // Lower temperature for more consistent analysis
+      response_format: { type: "json_object" },
+      max_tokens: 500
+    });
+    
+    // Calculate total tokens used
+    const outputTokens = response.usage?.completion_tokens || 0;
+    const totalTokens = inputTokens + outputTokens;
+    
+    // Parse and validate the response
+    const brandProfile = JSON.parse(response.choices[0].message.content || "{}") as BrandProfile;
+    
+    // Add timestamp
+    brandProfile.timestamp = new Date().toISOString();
+    
+    return {
+      analysis: brandProfile,
+      tokenUsage: totalTokens
+    };
+  } catch (error) {
+    console.error('Error analyzing brand profile:', error);
+    throw new Error('Failed to analyze brand profile. Please try again.');
+  }
+}
+
+// Update processRequest to use brand profile analysis
 export async function processRequest(
   imageUrl: string,
   prompt: string,
   templateName?: string,
   referenceAdUrls: string[] = [],
-  isHDQuality: boolean = false, // Default to standard quality for cost efficiency
-  userId?: string // Add userId parameter to maintain conversation context
+  isHDQuality: boolean = false,
+  userId?: string
 ): Promise<{ adDescription: string; adImageUrl: string; costData: CostTracker; conversationSummary?: string }> {
   try {
     // Get or create conversation manager for this user
     const conversationManager = userId ? 
       getConversationManager(userId) : 
-      createConversationManager(); // Create temporary one if no userId
+      createConversationManager();
     
     // Initialize cost tracking
     const costData: CostTracker = {
@@ -355,42 +423,42 @@ export async function processRequest(
       totalCostUSD: 0
     };
     
-    // Add user's prompt to conversation history
-    conversationManager.addUserMessage(`I want to create an advertisement for a product using this image: [Product Image]. My requirements: ${prompt}`);
+    // Step 1: Analyze brand profile first
+    console.log('Analyzing brand profile...');
+    const { analysis: brandProfile, tokenUsage: brandTokens } = await analyzeBrandProfile(imageUrl);
+    costData.imageAnalysisTokens += brandTokens;
+    
+    // Add brand analysis to conversation context
+    conversationManager.addAssistantMessage(`I've analyzed your brand profile. Here are the key elements: ${JSON.stringify(brandProfile)}`);
+    
+    // Step 2: Analyze product details
+    console.log('Analyzing product details...');
+    const { analysis: productAnalysis, tokenUsage: productTokens } = await analyzeProductImage(imageUrl);
+    costData.imageAnalysisTokens += productTokens;
+    
+    // Add product analysis to conversation context
+    conversationManager.addAssistantMessage(`I've analyzed your product image. Here are the key details: ${JSON.stringify(productAnalysis)}`);
     
     // Get brand profile from template
-    let brandProfile: any;
+    let brandProfileFromTemplate: any;
     
     if (templateName) {
       // Use pre-defined template
-      brandProfile = await loadBrandTemplate(templateName);
+      brandProfileFromTemplate = await loadBrandTemplate(templateName);
       
       // Update system prompt with brand template information
       conversationManager.updateSystemPrompt(
-        `You are an AI assistant specializing in creating professional product advertisements. You analyze product images and generate marketing materials based on user prompts and brand templates. Current brand template: ${JSON.stringify(brandProfile)}`
+        `You are an AI assistant specializing in creating professional product advertisements. You analyze product images and generate marketing materials based on user prompts and brand templates. Current brand template: ${JSON.stringify(brandProfileFromTemplate)}`
       );
     } else if (referenceAdUrls.length > 0) {
       // For now, use default template to save on costs
-      brandProfile = await loadBrandTemplate('sportsDrink');
+      brandProfileFromTemplate = await loadBrandTemplate('sportsDrink');
       console.log('Using default template as reference ad analysis is not implemented yet');
     } else {
       throw new Error('Either a template name or reference ad URLs must be provided');
     }
     
-    // Step 1: Analyze the user's product image with GPT-4o-mini
-    console.log('Analyzing product image...');
-    const { analysis: productAnalysis, tokenUsage: analysisTokens } = await analyzeProductImage(imageUrl);
-    costData.imageAnalysisTokens = analysisTokens;
-    
-    // Add analysis result to conversation context
-    conversationManager.addAssistantMessage(`I've analyzed your product image. Here are the key details: ${JSON.stringify(productAnalysis)}`);
-    
-    // Calculate cost for image analysis (approximate rates for GPT-4o-mini with vision)
-    // $0.015 per 1K input tokens, $0.03 per 1K output tokens, plus image processing cost
-    // Add image processing cost (varies by size, using average)
-    const imageAnalysisCost = ((analysisTokens / 1000) * 0.02) + 0.01;
-    
-    // Step 2: Create a detailed prompt for DALL-E 3 
+    // Step 3: Create a detailed prompt for DALL-E 3 
     console.log('Creating DALL-E prompt...');
     
     // Use conversation context for generating the DALL-E prompt
@@ -421,7 +489,7 @@ export async function processRequest(
     // $0.0015 per 1K input tokens, $0.002 per 1K output tokens
     const promptGenerationCost = (promptTokens / 1000) * 0.002;
     
-    // Step 3: Generate the ad image using DALL-E 3
+    // Step 4: Generate the ad image using DALL-E 3
     console.log(`Generating advertisement image (${isHDQuality ? 'HD' : 'Standard'} quality)...`);
     const adImageUrl = await generateAdImage(dallePrompt, isHDQuality);
     
@@ -434,11 +502,11 @@ export async function processRequest(
     costData.dalleImageGeneration = dalleGenerationCost;
     
     // Calculate total cost
-    costData.totalCostUSD = imageAnalysisCost + promptGenerationCost + dalleGenerationCost;
+    costData.totalCostUSD = costData.imageAnalysisTokens * 0.02 + promptGenerationCost + dalleGenerationCost;
     
     // Log costs for monitoring
     console.log('Cost breakdown:', {
-      imageAnalysis: `$${imageAnalysisCost.toFixed(4)} (${analysisTokens} tokens)`,
+      imageAnalysis: `$${(costData.imageAnalysisTokens * 0.02).toFixed(4)} (${costData.imageAnalysisTokens} tokens)`,
       promptGeneration: `$${promptGenerationCost.toFixed(4)} (${promptTokens} tokens)`,
       imageGeneration: `$${dalleGenerationCost.toFixed(2)} (${isHDQuality ? 'HD' : 'Standard'})`,
       total: `$${costData.totalCostUSD.toFixed(4)} USD`
