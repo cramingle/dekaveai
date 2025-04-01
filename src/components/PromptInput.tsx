@@ -51,7 +51,7 @@ export function PromptInput({ onSubmit, isLoading = false, disabled = false }: P
           >
             {isLoading ? (
               <div className="flex items-center justify-center w-8 h-8">
-                <LoadingSpinner size={24} color="#000000" />
+                <LoadingSpinner variant="small" color="#000000" />
               </div>
             ) : (
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">

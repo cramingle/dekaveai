@@ -612,7 +612,7 @@ export default function Home() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.3 }}
               >
-                <LoadingSpinner size={80} color="#ffffff" message="Generating your ad..." />
+                <LoadingSpinner variant="small" color="#ffffff" message="Generating your ad..." />
               </motion.div>
             )}
           </div>
@@ -628,7 +628,7 @@ export default function Home() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
         >
-          <LoadingSpinner size={80} color="#ffffff" message="Analyzing your brand profile..." />
+          <LoadingSpinner variant="small" color="#ffffff" message="Analyzing your brand profile..." />
         </motion.div>
       )}
 

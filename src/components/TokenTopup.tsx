@@ -237,7 +237,7 @@ export function TokenTopup({ onClose }: TokenTopupProps) {
             >
               {isLoading ? (
                 <div className="flex items-center justify-center py-4">
-                  <LoadingSpinner size={60} color="#ffffff" message="Processing purchase..." />
+                  <LoadingSpinner variant="small" color="#ffffff" message="Processing purchase..." />
                 </div>
               ) : (
                 `Purchase ${selectedPackage ? formatPrice(tokenPackages.find(p => p.id === selectedPackage)?.price || 0) : 'Tokens'}`

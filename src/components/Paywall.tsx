@@ -155,7 +155,7 @@ export function Paywall({ onClose, isLoading = false }: PaywallProps) {
               >
                 {isLoading ? (
                   <div className="flex items-center justify-center py-4">
-                    <LoadingSpinner size={60} color="#000000" message="Processing payment..." />
+                    <LoadingSpinner variant="small" color="#000000" message="Processing payment..." />
                   </div>
                 ) : (
                   <div className="flex items-center">

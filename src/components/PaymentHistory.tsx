@@ -37,7 +37,7 @@ export function PaymentHistory() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <LoadingSpinner size={60} color="#ffffff" message="Loading payment history..." />
+        <LoadingSpinner variant="small" color="#ffffff" message="Loading payment history..." />
       </div>
     );
   }
