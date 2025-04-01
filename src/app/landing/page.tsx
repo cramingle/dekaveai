@@ -46,8 +46,9 @@ export default function LandingPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7 }}
         >
-          {/* Logo/Icon */}
-          <div className="mb-6 md:mb-8">
+          {/* Logo and App Name Container */}
+          <div className="flex items-center gap-4 mb-8 md:mb-10">
+            {/* Logo/Icon */}
             <div className="relative">
               <div className="w-16 h-16 md:w-24 md:h-24 rounded-full bg-gradient-to-r from-white/10 to-white/5 flex items-center justify-center">
                 <Image
@@ -59,13 +60,12 @@ export default function LandingPage() {
                 />
               </div>
             </div>
+            
+            {/* App Name */}
+            <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold">
+              <span className="text-white">skolp</span>
+            </h1>
           </div>
-          
-          {/* App Name */}
-          <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold mb-8 md:mb-10">
-            <span className="text-white">dekave</span>
-            <span className="text-zinc-400">AI</span>
-          </h1>
           
           {/* Search-like input */}
           <div className="w-full max-w-xl mx-auto mb-10 md:mb-16 relative">
@@ -263,9 +263,9 @@ export default function LandingPage() {
             height={20}
             className="h-5 w-auto object-contain"
           />
-          <span className="font-medium">dekaveAI</span>
+          <span className="font-medium">skolp</span>
         </div>
-        <p>© 2025 dekaveAI. All rights reserved.</p>
+        <p>© 2025 skolp. All rights reserved.</p>
       </footer>
     </div>
   );
