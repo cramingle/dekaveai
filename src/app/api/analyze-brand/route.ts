@@ -25,7 +25,9 @@ export async function POST(req: Request) {
             { type: "text", text: prompt },
             {
               type: "image_url",
-              image_url: imageUrl,
+              image_url: {
+                url: imageUrl,
+              },
             },
           ],
         },
