@@ -11,31 +11,53 @@ interface BrandProfile {
   timestamp: string;
 }
 
-const BRAND_PROFILE_PROMPT = `Analyze this brand image and extract key brand elements. Focus on:
-1. Overall brand style and aesthetic
-2. Color palette
-3. Key visual elements and symbols
-4. Mood and tone
-5. Target audience indicators
-6. Industry category
+const BRAND_PROFILE_PROMPT = `Analyze this brand image and extract key brand elements in JSON format with these properties:
+{
+  "brandStyle": "string describing overall style and aesthetic",
+  "colorPalette": ["array of hex color codes"],
+  "visualElements": ["array of key visual elements and symbols"],
+  "moodAndTone": "string describing mood and tone",
+  "targetAudience": "string describing target audience",
+  "industryCategory": "string describing industry category"
+}`;
 
-Provide the analysis in a structured JSON format.`;
-
-export async function extractBrandProfile(imageUrl: string): Promise<BrandProfile | null> {
+async function blobUrlToBase64(blobUrl: string): Promise<string> {
   try {
+    const response = await fetch(blobUrl);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        resolve(base64String); // Keep the full data URL
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error('Error converting blob to base64:', error);
+    throw error;
+  }
+}
+
+export async function extractBrandProfile(imageUrl: string) {
+  try {
+    // Convert blob URL to base64
+    const base64Image = await blobUrlToBase64(imageUrl);
+    
     const response = await fetch('/api/analyze-brand', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        imageUrl,
-        prompt: BRAND_PROFILE_PROMPT,
+        imageUrl: base64Image,
+        prompt: BRAND_PROFILE_PROMPT
       }),
     });
 
     if (!response.ok) {
-      throw new Error('Failed to analyze brand profile');
+      throw new Error('Failed to analyze brand');
     }
 
     const result = await response.json();

@@ -16,35 +16,38 @@ export async function POST(req: Request) {
       );
     }
 
-    const response = await openai.chat.completions.create({
+    const response = await openai.responses.create({
       model: "gpt-4o-mini",
-      messages: [
+      input: [
         {
           role: "user",
           content: [
-            { type: "text", text: prompt },
+            { type: "input_text", text: prompt },
             {
-              type: "image_url",
-              image_url: {
-                url: imageUrl,
-              },
+              type: "input_image",
+              image_url: imageUrl,
+              detail: "high"
             },
           ],
         },
-      ],
-      max_tokens: 500,
-      temperature: 0.7,
+      ]
     });
 
-    const result = response.choices[0]?.message?.content;
-    if (!result) {
+    if (!response.output_text) {
       throw new Error('No response from OpenAI');
     }
 
-    // Parse the JSON response
-    const brandProfile = JSON.parse(result);
-
-    return NextResponse.json(brandProfile);
+    try {
+      // Parse the JSON response
+      const brandProfile = JSON.parse(response.output_text);
+      return NextResponse.json(brandProfile);
+    } catch (parseError) {
+      console.error('Error parsing OpenAI response:', parseError);
+      return NextResponse.json(
+        { error: 'Failed to parse brand analysis' },
+        { status: 500 }
+      );
+    }
   } catch (error) {
     console.error('Error analyzing brand:', error);
     return NextResponse.json(
