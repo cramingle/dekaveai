@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
 import { getPaymentHistory } from '@/lib/stripe';
+import { LoadingSpinner } from '@/components/LoadingSpinner';
 
 type Payment = {
   id: string;
@@ -35,13 +36,8 @@ export function PaymentHistory() {
 
   if (isLoading) {
     return (
-      <div className="animate-pulse">
-        <div className="h-8 bg-zinc-800 rounded w-1/4 mb-4"></div>
-        <div className="space-y-3">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-16 bg-zinc-800 rounded"></div>
-          ))}
-        </div>
+      <div className="flex items-center justify-center py-8">
+        <LoadingSpinner size={60} color="#ffffff" message="Loading payment history..." />
       </div>
     );
   }

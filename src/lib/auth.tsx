@@ -22,6 +22,7 @@ interface ExtendedUser {
   conversationLastUsed?: string;
   hasLoggedInBefore: boolean;
   token?: string;
+  stripeCustomerId?: string;
 }
 
 // Define the auth context types
@@ -77,7 +78,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               hasLoggedInBefore: ((userData.tokens ?? 0) > 0 || !!userData.tokens_expiry_date),
               hasStoredConversation: !!userData.conversation_last_used,
               conversationLastUsed: userData.conversation_last_used,
-              token: session.access_token
+              token: session.access_token,
+              stripeCustomerId: userData.stripe_customer_id
             });
             setTokens(userData.tokens || 0);
             setTokensExpiryDate(userData.tokens_expiry_date);
@@ -115,7 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               hasLoggedInBefore: ((userData.tokens ?? 0) > 0 || !!userData.tokens_expiry_date),
               hasStoredConversation: !!userData.conversation_last_used,
               conversationLastUsed: userData.conversation_last_used,
-              token: session.access_token
+              token: session.access_token,
+              stripeCustomerId: userData.stripe_customer_id
             });
             setTokens(userData.tokens || 0);
             setTokensExpiryDate(userData.tokens_expiry_date);

@@ -601,7 +601,7 @@ export default function Home() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.3 }}
               >
-                <LoadingSpinner />
+                <LoadingSpinner size={80} color="#ffffff" message="Generating your ad..." />
               </motion.div>
             )}
           </div>
@@ -617,8 +617,7 @@ export default function Home() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
         >
-          <LoadingSpinner />
-          <p className="text-zinc-400 mt-4">Analyzing your brand profile...</p>
+          <LoadingSpinner size={80} color="#ffffff" message="Analyzing your brand profile..." />
         </motion.div>
       )}
 
