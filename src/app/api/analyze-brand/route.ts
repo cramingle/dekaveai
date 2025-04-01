@@ -22,7 +22,7 @@ function extractJsonFromText(text: string): string {
   return text;
 }
 
-export const maxDuration = 300; // Set max duration to 300 seconds (5 minutes)
+export const maxDuration = 60; // Set max duration to 60 seconds (Vercel hobby plan limit)
 export const dynamic = 'force-dynamic'; // Disable static optimization
 
 export async function POST(req: Request) {
@@ -48,7 +48,12 @@ export async function POST(req: Request) {
       );
     }
 
-    const response = await openai.responses.create({
+    // Add timeout to OpenAI request
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Request timeout')), 55000); // 55 seconds timeout
+    });
+
+    const responsePromise = openai.responses.create({
       model: "gpt-4o-mini",
       input: [
         {
@@ -64,6 +69,9 @@ export async function POST(req: Request) {
         },
       ]
     });
+
+    // Race between timeout and actual request
+    const response = await Promise.race([responsePromise, timeoutPromise]) as any;
 
     if (!response.output_text) {
       throw new Error('No response from OpenAI');
@@ -90,10 +98,15 @@ export async function POST(req: Request) {
     }
   } catch (error: any) {
     console.error('Error analyzing brand:', error);
+    const status = error.message === 'Request timeout' ? 504 : 500;
     return NextResponse.json(
-      { error: 'Failed to analyze brand' },
       { 
-        status: error.status === 504 ? 504 : 500,
+        error: error.message === 'Request timeout' 
+          ? 'Analysis took too long. Please try again.' 
+          : 'Failed to analyze brand'
+      },
+      { 
+        status,
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'POST, OPTIONS',

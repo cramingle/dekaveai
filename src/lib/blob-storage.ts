@@ -1,5 +1,4 @@
 import { put } from '@vercel/blob';
-import { env } from './env';
 import logger from './logger';
 
 /**
@@ -13,7 +12,7 @@ export async function uploadImageToBlob(
   userId: string
 ): Promise<string> {
   try {
-    if (!env.BLOB_READ_WRITE_TOKEN) {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
       throw new Error('BLOB_READ_WRITE_TOKEN is not configured');
     }
 
@@ -54,7 +53,7 @@ export async function uploadImageToBlob(
  */
 export async function storeGeneratedImage(imageUrl: string): Promise<string> {
   try {
-    if (!env.BLOB_READ_WRITE_TOKEN) {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
       throw new Error('BLOB_READ_WRITE_TOKEN is not configured');
     }
 
@@ -89,10 +88,4 @@ export async function storeGeneratedImage(imageUrl: string): Promise<string> {
     });
     throw new Error('Failed to store generated image. Please try again.');
   }
-}
-
-// Helper function to generate a mock image URL for local development
-export function getMockImageUrl(filename: string): string {
-  // For demo purposes, return a placeholder image
-  return 'https://placekitten.com/400/300';
 } 
