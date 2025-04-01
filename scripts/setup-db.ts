@@ -1,10 +1,10 @@
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { db } from '@/lib/db';
 import { seedBrandTemplates } from '@/lib/db/seed-templates';
+import { DATABASE_URL } from '@/lib/env';
 
 async function checkEnvironment() {
   const requiredEnvVars = [
-    'DATABASE_URL',
     'NEXT_PUBLIC_SUPABASE_URL',
     'NEXT_PUBLIC_SUPABASE_ANON_KEY',
     'OPENAI_API_KEY'
@@ -14,6 +14,11 @@ async function checkEnvironment() {
   
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  }
+
+  // Check if we have either DATABASE_URL or SUPABASE_URL
+  if (!DATABASE_URL && !process.env.SUPABASE_URL) {
+    throw new Error('Either DATABASE_URL or SUPABASE_URL must be provided');
   }
 }
 

@@ -7,28 +7,6 @@ interface LoadingLogoProps {
 }
 
 export function LoadingLogo({ size = 100, color = '#ffffff' }: LoadingLogoProps) {
-  const [arms, setArms] = useState<Array<{ length: number; angle: number; delay: number }>>(
-    Array.from({ length: 8 }, (_, i) => ({
-      length: Math.random() * 30 + 20, // Random length between 20-50
-      angle: (i * 360) / 8, // Evenly distributed angles
-      delay: i * 0.2, // Staggered animation delay
-    }))
-  );
-
-  // Update arms randomly
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setArms(prev => 
-        prev.map(arm => ({
-          ...arm,
-          length: Math.random() * 30 + 20, // Random new length
-        }))
-      );
-    }, 2000); // Update every 2 seconds
-
-    return () => clearInterval(interval);
-  }, []);
-
   return (
     <div className="relative" style={{ width: size, height: size }}>
       <motion.svg
@@ -37,66 +15,57 @@ export function LoadingLogo({ size = 100, color = '#ffffff' }: LoadingLogoProps)
         initial="initial"
         animate="animate"
       >
-        {/* Center circle */}
+        {/* X Logo shape */}
+        <motion.path
+          d="M50 15 C60 25, 70 25, 80 15 L85 20 C75 30, 75 40, 85 50 C75 60, 75 70, 85 80 L80 85 C70 75, 60 75, 50 85 C40 75, 30 75, 20 85 L15 80 C25 70, 25 60, 15 50 C25 40, 25 30, 15 20 L20 15 C30 25, 40 25, 50 15"
+          fill={color}
+          animate={{
+            scale: [1, 1.05, 1],
+            opacity: [0.8, 1, 0.8],
+            rotate: [0, 360],
+          }}
+          transition={{
+            duration: 8,
+            repeat: Infinity,
+            ease: "linear",
+          }}
+        />
+
+        {/* Glowing effect */}
+        <motion.path
+          d="M50 15 C60 25, 70 25, 80 15 L85 20 C75 30, 75 40, 85 50 C75 60, 75 70, 85 80 L80 85 C70 75, 60 75, 50 85 C40 75, 30 75, 20 85 L15 80 C25 70, 25 60, 15 50 C25 40, 25 30, 15 20 L20 15 C30 25, 40 25, 50 15"
+          stroke={color}
+          strokeWidth="2"
+          fill="none"
+          animate={{
+            scale: [1.1, 1.2, 1.1],
+            opacity: [0.1, 0.3, 0.1],
+            rotate: [0, -360],
+          }}
+          transition={{
+            duration: 8,
+            repeat: Infinity,
+            ease: "linear",
+          }}
+          style={{
+            filter: "blur(4px)",
+          }}
+        />
+
+        {/* Center dot */}
         <motion.circle
           cx="50"
           cy="50"
-          r="10"
+          r="4"
           fill={color}
           animate={{
-            scale: [1, 1.1, 1],
-            opacity: [0.7, 1, 0.7],
+            scale: [1, 1.2, 1],
+            opacity: [0.5, 1, 0.5],
           }}
           transition={{
             duration: 2,
             repeat: Infinity,
-            ease: "easeInOut"
-          }}
-        />
-
-        {/* Animated arms */}
-        {arms.map((arm, index) => (
-          <motion.g key={index} style={{ originX: 50, originY: 50 }}>
-            <motion.line
-              x1="50"
-              y1="50"
-              x2="50"
-              y2={50 - arm.length}
-              stroke={color}
-              strokeWidth="4"
-              strokeLinecap="round"
-              initial={{ rotate: arm.angle }}
-              animate={{
-                rotate: [arm.angle, arm.angle + 360],
-                scaleY: [1, 1.5, 1],
-                opacity: [0.5, 1, 0.5],
-              }}
-              transition={{
-                duration: 8,
-                repeat: Infinity,
-                ease: "easeInOut",
-                delay: arm.delay,
-              }}
-            />
-          </motion.g>
-        ))}
-
-        {/* Outer glow effect */}
-        <motion.circle
-          cx="50"
-          cy="50"
-          r="45"
-          stroke={color}
-          strokeWidth="1"
-          fill="none"
-          animate={{
-            scale: [1, 1.1, 1],
-            opacity: [0.1, 0.3, 0.1],
-          }}
-          transition={{
-            duration: 3,
-            repeat: Infinity,
-            ease: "easeInOut"
+            ease: "easeInOut",
           }}
         />
       </motion.svg>
