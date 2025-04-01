@@ -22,14 +22,29 @@ function extractJsonFromText(text: string): string {
   return text;
 }
 
+export const maxDuration = 300; // Set max duration to 300 seconds (5 minutes)
+export const dynamic = 'force-dynamic'; // Disable static optimization
+
 export async function POST(req: Request) {
   try {
+    // Add CORS headers
+    const headers = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    };
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      return new NextResponse(null, { headers });
+    }
+
     const { imageUrl, prompt } = await req.json();
 
     if (!imageUrl || !prompt) {
       return NextResponse.json(
         { error: 'Missing required fields' },
-        { status: 400 }
+        { status: 400, headers }
       );
     }
 
@@ -61,7 +76,7 @@ export async function POST(req: Request) {
       
       // Parse the JSON response
       const brandProfile = JSON.parse(cleanJson);
-      return NextResponse.json(brandProfile);
+      return NextResponse.json(brandProfile, { headers });
     } catch (parseError) {
       console.error('Error parsing OpenAI response:', parseError);
       console.error('Raw response:', response.output_text);
@@ -70,14 +85,21 @@ export async function POST(req: Request) {
           error: 'Failed to parse brand analysis',
           rawResponse: response.output_text // Include raw response for debugging
         },
-        { status: 500 }
+        { status: 500, headers }
       );
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error analyzing brand:', error);
     return NextResponse.json(
       { error: 'Failed to analyze brand' },
-      { status: 500 }
+      { 
+        status: error.status === 504 ? 504 : 500,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        }
+      }
     );
   }
 } 

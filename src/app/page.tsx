@@ -27,6 +27,15 @@ interface TokenUsageInfo {
   refreshDate?: Date; // When tokens refresh (for subscription models)
 }
 
+interface ChatMessage {
+  id: string;
+  type: 'prompt' | 'result';
+  content: string;
+  timestamp: number;
+  tokensUsed?: number;
+  messageType: 'text' | 'image';
+}
+
 export default function Home() {
   // Use auth context
   const { isAuthenticated, tokens, tier, buyTokens, refreshTokenCount, user } = useAuth();
@@ -42,13 +51,7 @@ export default function Home() {
   const [isProcessingPayment, setIsProcessingPayment] = useState<boolean>(false);
   const [windowWidth, setWindowWidth] = useState<number>(0);
   const [isHDQuality, setIsHDQuality] = useState<boolean>(false);
-  const [chatHistory, setChatHistory] = useState<Array<{
-    id: string,
-    type: 'prompt' | 'result',
-    content: string,
-    timestamp: number,
-    tokensUsed?: number
-  }>>([]);
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [maxTokens, setMaxTokens] = useState<number>(10);
   const [tokenInfo, setTokenInfo] = useState<TokenUsageInfo>({
     tier: 'Pioneer',
@@ -146,8 +149,9 @@ export default function Home() {
         id: `system-${Date.now()}`,
         type: 'result',
         content: "I understand your brand profile. Now, tell me what kind of ad you'd like to create.",
-        timestamp: Date.now()
-      }]);
+        timestamp: Date.now(),
+        messageType: 'text'
+      } as ChatMessage]);
     }
     
     // Track image upload event
@@ -184,8 +188,9 @@ export default function Home() {
       type: 'prompt',
       content: prompt,
       timestamp: Date.now(),
-      tokensUsed: tokenCost
-    }]);
+      tokensUsed: tokenCost,
+      messageType: 'text'
+    } as ChatMessage]);
     
     // Clear the input after submission
     setUserPrompt('');
@@ -250,8 +255,9 @@ export default function Home() {
             id: `result-${Date.now()}`,
             type: 'result',
             content: apiResult.adImageUrl,
-            timestamp: Date.now()
-          }]);
+            timestamp: Date.now(),
+            messageType: 'image'
+          } as ChatMessage]);
           setIsGenerating(false);
           return;
         } catch (error) {
@@ -316,8 +322,9 @@ export default function Home() {
         id: `result-${Date.now()}`,
         type: 'result',
         content: apiResult.adImageUrl,
-        timestamp: Date.now()
-      }]);
+        timestamp: Date.now(),
+        messageType: 'image'
+      } as ChatMessage]);
     } catch (error) {
       console.error('Error generating result:', error);
       alert('Failed to generate result. Please try again.');
@@ -582,7 +589,11 @@ export default function Home() {
                       ) : (
                         <div className="flex justify-start mb-4">
                           <div className="bg-zinc-900/50 backdrop-blur-sm rounded-2xl rounded-tl-sm p-3 max-w-[90%]">
-                            <img src={item.content} alt="Generated result" className="rounded-lg max-h-[450px] w-auto" />
+                            {item.messageType === 'text' ? (
+                              <p className="text-white">{item.content}</p>
+                            ) : (
+                              <img src={item.content} alt="Generated result" className="rounded-lg max-h-[450px] w-auto" />
+                            )}
                           </div>
                         </div>
                       )}
