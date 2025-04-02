@@ -78,7 +78,7 @@ interface EditingContext {
 
 export default function Home() {
   // Use auth context
-  const { isAuthenticated, tokens, tier, buyTokens, refreshTokenCount, user } = useAuth();
+  const { isAuthenticated, tokens, buyTokens, user } = useAuth();
   
   // Other state variables
   const [userPrompt, setUserPrompt] = useState<string>('');
@@ -153,41 +153,81 @@ export default function Home() {
   }, [isAuthenticated, tokens, user]);
   
   // Token utility functions
-  const getMaxTokens = () => {
-    // Use a consistent upper limit for all users, not based on tier
-    return 1000000; // 1M tokens as reasonable default
-  };
   
-  const calculateTokenUsage = (prompt: string, images: UploadedImage[]): number => {
-    // Base token cost for standard quality
-    let tokenCost = 10000;
-    
-    // If we're in edit mode, reduce the base cost since we're modifying existing content
-    if (editingContext.isEditing) {
-      // Editing costs 60% of a new generation since we're leveraging existing content
-      tokenCost = 6000;
+  // Calculate image tokens based on dimensions and detail level
+  function calculateImageTokens(width: number, height: number, isHDQuality: boolean): number {
+    if (!isHDQuality) {
+      return 85; // Low detail is fixed cost
     }
-    
-    // Double the cost for HD quality
-    if (isHDQuality) {
-      tokenCost = tokenCost * 2;
+
+    // Scale to fit in 2048x2048 square if needed
+    let scaledWidth = width;
+    let scaledHeight = height;
+    if (width > 2048 || height > 2048) {
+      const scale = Math.min(2048 / width, 2048 / height);
+      scaledWidth = Math.floor(width * scale);
+      scaledHeight = Math.floor(height * scale);
     }
+
+    // Scale so shortest side is 768px
+    const shortestSide = Math.min(scaledWidth, scaledHeight);
+    const scale = 768 / shortestSide;
+    scaledWidth = Math.floor(scaledWidth * scale);
+    scaledHeight = Math.floor(scaledHeight * scale);
+
+    // Count 512px squares
+    const tilesX = Math.ceil(scaledWidth / 512);
+    const tilesY = Math.ceil(scaledHeight / 512);
+    const totalTiles = tilesX * tilesY;
+
+    // Calculate final token cost
+    return (totalTiles * 170) + 85;
+  }
+
+  const calculateTokenUsage = (prompt: string): number => {
+    // Detect platform and size from prompt
+    const platformSize = detectPlatformAndSize(prompt);
     
-    // Add complexity multiplier based on prompt length and sophistication
-    const promptComplexity = Math.min(1.5, 1 + (prompt.length / 500)); // Max 50% increase for long prompts
-    tokenCost = Math.floor(tokenCost * promptComplexity);
-    
-    // For edits, check if it's a major revision
+    // Calculate base image tokens based on platform size or default size
+    const width = platformSize?.width || 1080;
+    const height = platformSize?.height || 1080;
+    const imageTokens = calculateImageTokens(width, height, isHDQuality);
+
+    // Calculate prompt tokens (rough estimation)
+    const promptTokens = Math.ceil(prompt.length / 4);
+
+    // Base cost calculation
+    let totalTokens = imageTokens + promptTokens;
+
+    // Adjust for edit mode
     if (editingContext.isEditing) {
+      // Editing uses the same image size but requires less processing
+      totalTokens = Math.floor(totalTokens * 0.6); // 60% of new generation
+      
+      // Check for major edits
       const majorEditKeywords = ['completely', 'entirely', 'totally', 'redesign', 'overhaul'];
       const isMajorEdit = majorEditKeywords.some(keyword => prompt.toLowerCase().includes(keyword));
       if (isMajorEdit) {
-        // Major edits cost 80% of a new generation
-        tokenCost = Math.floor(tokenCost * (8/6)); // Adjust from 60% to 80%
+        totalTokens = Math.floor(totalTokens * (8/6)); // Adjust to 80% for major edits
       }
     }
-    
-    return tokenCost;
+
+    // Add complexity multiplier for sophisticated prompts
+    const promptComplexity = Math.min(1.5, 1 + (prompt.length / 500)); // Max 50% increase
+    totalTokens = Math.floor(totalTokens * promptComplexity);
+
+    // Calculate OpenAI cost (as of 2024 pricing)
+    // GPT-4V input: $0.01 per 1K tokens
+    // Image generation: ~$0.02 per image (standard) or ~$0.04 (HD)
+    const openAICost = (totalTokens / 1000 * 0.01) + (isHDQuality ? 0.04 : 0.02);
+
+    // Add our profit margin (90% markup)
+    const profitMargin = 1.9; // 90% profit
+    const finalCost = openAICost * profitMargin;
+
+    // Convert cost back to tokens for user display
+    // We use a token:cost ratio where 1000 tokens ≈ $0.02 after markup
+    return Math.ceil(finalCost * 50000); // Convert dollars back to tokens
   };
   
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -244,7 +284,7 @@ export default function Home() {
     if (!prompt.trim()) return;
     
     // Calculate token cost for this operation
-    const tokenCost = calculateTokenUsage(prompt, uploadedImages);
+    const tokenCost = calculateTokenUsage(prompt);
     
     setIsGenerating(true);
     
@@ -365,94 +405,7 @@ export default function Home() {
     }
   };
   
-  const simulateSuccessfulPayment = async () => {
-    // Hide paywall
-    setShowPaywall(false);
-    setIsProcessingPayment(false);
-    
-    // Show loading spinner
-    setIsGenerating(true);
-    
-    // Call the API to generate the result
-    try {
-      // Get the latest prompt from chat history
-      const lastPrompt = chatHistory.filter(item => item.type === 'prompt').pop();
-      
-      if (!lastPrompt || !uploadedImages[0]?.url) {
-        throw new Error('Missing prompt or image');
-      }
-      
-      // Call the generate API endpoint
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          imageUrl: uploadedImages[0].url,
-          prompt: lastPrompt.content,
-          templateName: 'sportsDrink',
-          isHDQuality
-        }),
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to generate ad');
-      }
-      
-      const apiResult = await response.json();
-      setGeneratedAd(apiResult.adImageUrl);
-      setChatHistory(prev => [...prev, {
-        id: `result-${Date.now()}`,
-        type: 'result',
-        content: apiResult.adImageUrl,
-        timestamp: Date.now(),
-        messageType: 'image'
-      } as ChatMessage]);
-    } catch (error) {
-      console.error('Error generating result:', error);
-      alert('Failed to generate result. Please try again.');
-    } finally {
-      setIsGenerating(false);
-    }
-  };
   
-  const handleTokenPurchase = async (packageId: string) => {
-    setIsProcessingPayment(true);
-    
-    try {
-      const result = await buyTokens(packageId);
-      
-      // Track token purchase event (successfully attempted)
-      trackEvent(EventType.TOKEN_PURCHASE, {
-        packageId,
-        success: result.success,
-        timestamp: new Date().toISOString()
-      });
-      
-      if (!result.success) {
-        console.error('Token purchase error:', result.error);
-        alert(result.error || 'Failed to purchase tokens');
-      }
-      
-      setIsProcessingPayment(false);
-      setShowTokenTopup(false);
-    } catch (error) {
-      console.error('Error buying tokens:', error);
-      
-      // Track token purchase error
-      trackEvent(EventType.TOKEN_PURCHASE, {
-        packageId,
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        timestamp: new Date().toISOString()
-      });
-      
-      setIsProcessingPayment(false);
-      alert('An error occurred while purchasing tokens');
-    }
-  };
   
   const handleBuyMoreTokens = () => {
     setShowTokenTopup(true);
@@ -876,7 +829,7 @@ export default function Home() {
                 
                 <button 
                   onClick={() => handlePromptSubmit(userPrompt)}
-                  disabled={!userPrompt.trim() || !uploadedImages.length || isGenerating || (isAuthenticated && tokens < calculateTokenUsage(userPrompt, uploadedImages))}
+                  disabled={!userPrompt.trim() || !uploadedImages.length || isGenerating || (isAuthenticated && tokens < calculateTokenUsage(userPrompt))}
                   className="rounded-full bg-white text-black w-8 h-8 flex items-center justify-center hover:bg-gray-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
