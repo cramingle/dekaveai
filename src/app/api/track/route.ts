@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import logger from '@/lib/logger';
-import { decrypt } from '@/lib/crypto';
 import { rateLimit } from '@/lib/rate-limit';
 import { EventType } from '@/lib/analytics';
 
@@ -24,19 +23,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing event data' }, { status: 400 });
     }
 
-    let decryptedData;
-    try {
-      // Decrypt and parse event data
-      decryptedData = JSON.parse(decrypt(body.eventData));
-    } catch (decryptError) {
-      logger.error('Failed to decrypt event data:', decryptError);
-      return NextResponse.json(
-        { error: 'Invalid event data format' },
-        { status: 400 }
-      );
-    }
-
-    const { type, properties } = decryptedData;
+    const { type, properties } = body.eventData;
 
     // Validate event type
     if (!Object.values(EventType).includes(type)) {

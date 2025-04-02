@@ -1,7 +1,6 @@
 // Custom analytics utilities for tracking app usage and key events
 import logger from './logger';
 import { getUrl, BASE_URL } from './env';
-import { encrypt } from './crypto';
 
 // Track costs for reporting and billing
 export interface CostData {
@@ -63,16 +62,13 @@ export async function trackEvent(type: EventType, properties: EventProperties = 
       }
     };
 
-    // Encrypt the event data
-    const encryptedData = encrypt(JSON.stringify(eventData));
-
     // Send to tracking endpoint
     const response = await fetch('/api/track', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ eventData: encryptedData })
+      body: JSON.stringify({ eventData })
     });
 
     if (!response.ok) {
