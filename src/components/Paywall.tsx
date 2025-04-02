@@ -36,6 +36,14 @@ export function Paywall({ onClose, isLoading = false }: PaywallProps) {
         timestamp: new Date().toISOString()
       });
       
+      // Ensure we have the saved state in sessionStorage before proceeding
+      const savedState = sessionStorage.getItem('userState');
+      console.log('State before auth:', savedState); // Debug log
+      
+      if (!savedState) {
+        console.error('No state found in sessionStorage before auth');
+      }
+      
       await signInWithGoogle();
       // After successful sign-in, the auth state change will trigger
       // state restoration via the custom event

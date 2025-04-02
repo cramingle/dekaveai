@@ -124,7 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .single();
 
           if (userData) {
-            setUser({
+            const userState = {
               id: session.user.id,
               email: session.user.email!,
               tokens: userData.tokens || 0,
@@ -135,7 +135,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               conversationLastUsed: userData.conversation_last_used,
               token: session.access_token,
               stripeCustomerId: userData.stripe_customer_id
-            });
+            };
+            
+            setUser(userState);
             setTokens(userData.tokens || 0);
             setTokensExpiryDate(userData.tokens_expiry_date);
             setTier(userData.tier || 'Pioneer');
@@ -143,11 +145,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             // Restore saved state if exists
             const savedState = sessionStorage.getItem('userState');
+            console.log('Saved state found:', savedState); // Debug log
+            
             if (savedState) {
               try {
                 const state = JSON.parse(savedState);
-                // Emit an event to notify components about state restoration
-                window.dispatchEvent(new CustomEvent('authStateRestored', { detail: state }));
+                console.log('Parsed state:', state); // Debug log
+                
+                // Dispatch event with the restored state
+                window.dispatchEvent(new CustomEvent('authStateRestored', { 
+                  detail: {
+                    uploadedImages: state.uploadedImages || [],
+                    chatHistory: state.chatHistory || [],
+                    brandProfileAnalyzed: state.brandProfileAnalyzed || false,
+                    userPrompt: state.userPrompt || ''
+                  }
+                }));
+                
+                // Clear the saved state
+                sessionStorage.removeItem('userState');
               } catch (error) {
                 console.error('Error parsing saved state:', error);
               }
