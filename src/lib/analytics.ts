@@ -34,11 +34,28 @@ interface EventProperties {
 // Track events using Vercel Analytics
 export async function trackEvent(type: EventType, properties: EventProperties = {}) {
   try {
+    // Sanitize properties to ensure they're JSON-serializable
+    const sanitizedProps = Object.entries(properties).reduce((acc, [key, value]) => {
+      // Convert Date objects to ISO strings
+      if (value instanceof Date) {
+        acc[key] = value.toISOString();
+      } 
+      // Convert undefined/null to empty string
+      else if (value === undefined || value === null) {
+        acc[key] = '';
+      }
+      // Keep other primitive values as is
+      else {
+        acc[key] = value;
+      }
+      return acc;
+    }, {} as Record<string, any>);
+
     // Prepare event data
     const eventData = {
       type,
       properties: {
-        ...properties,
+        ...sanitizedProps,
         timestamp: new Date().toISOString()
       }
     };
@@ -56,9 +73,11 @@ export async function trackEvent(type: EventType, properties: EventProperties = 
     });
 
     if (!response.ok) {
-      console.error('Failed to track event:', await response.text());
+      const errorText = await response.text();
+      console.error('Failed to track event:', errorText);
     }
   } catch (error) {
+    // Log error but don't throw to prevent breaking the app
     console.error('Error tracking event:', error);
   }
 }

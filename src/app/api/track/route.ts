@@ -18,14 +18,24 @@ export async function POST(request: Request) {
     // Apply rate limiting - 100 requests per minute
     await limiter.check(100, 'TRACK_EVENT');
 
-    const { eventData } = await request.json();
+    const body = await request.json();
     
-    if (!eventData) {
+    if (!body || !body.eventData) {
       return NextResponse.json({ error: 'Missing event data' }, { status: 400 });
     }
 
-    // Decrypt and validate event data
-    const decryptedData = JSON.parse(decrypt(eventData));
+    let decryptedData;
+    try {
+      // Decrypt and parse event data
+      decryptedData = JSON.parse(decrypt(body.eventData));
+    } catch (decryptError) {
+      logger.error('Failed to decrypt event data:', decryptError);
+      return NextResponse.json(
+        { error: 'Invalid event data format' },
+        { status: 400 }
+      );
+    }
+
     const { type, properties } = decryptedData;
 
     // Validate event type
@@ -33,13 +43,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid event type' }, { status: 400 });
     }
 
-    // Process the event (implement your tracking logic here)
-    // For example, send to analytics service, store in database, etc.
-    console.log('Tracking event:', type, properties);
+    // Log the event
+    logger.info('Tracking event:', { type, ...properties });
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error tracking event:', error);
+    logger.error('Error tracking event:', error);
     return NextResponse.json(
       { error: 'Failed to track event' },
       { status: 500 }
