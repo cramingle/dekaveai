@@ -36,6 +36,39 @@ interface ChatMessage {
   messageType: 'text' | 'image';
 }
 
+type SocialPlatform = 'instagram' | 'facebook' | 'linkedin' | 'twitter';
+
+interface PlatformSize {
+  width: number;
+  height: number;
+  type: 'post' | 'story' | 'ad' | 'carousel';
+}
+
+const PLATFORM_SIZES: Record<SocialPlatform, Record<string, PlatformSize>> = {
+  instagram: {
+    post: { width: 1080, height: 1080, type: 'post' },
+    story: { width: 1080, height: 1920, type: 'story' },
+    ad_story: { width: 1080, height: 1920, type: 'ad' },
+    ad_landscape: { width: 1080, height: 566, type: 'ad' },
+    ad_square: { width: 1080, height: 1080, type: 'ad' }
+  },
+  facebook: {
+    post: { width: 1200, height: 630, type: 'post' },
+    ad: { width: 1080, height: 1080, type: 'ad' },
+    video: { width: 1280, height: 720, type: 'post' }
+  },
+  linkedin: {
+    post: { width: 1200, height: 627, type: 'post' },
+    story: { width: 1080, height: 1920, type: 'story' },
+    carousel: { width: 1080, height: 1080, type: 'carousel' }
+  },
+  twitter: {
+    tweet: { width: 1600, height: 900, type: 'post' },
+    ad_square: { width: 720, height: 720, type: 'ad' },
+    ad_landscape: { width: 1280, height: 720, type: 'ad' }
+  }
+};
+
 interface EditingContext {
   isEditing: boolean;
   targetMessageId: string | null;
@@ -277,7 +310,11 @@ export default function Home() {
               templateName: 'sportsDrink',
               isHDQuality,
               isEditing: editingContext.isEditing,
-              originalPrompt: editingContext.originalPrompt
+              originalPrompt: editingContext.originalPrompt,
+              // Add detected platform size
+              size: detectPlatformAndSize(prompt),
+              // Include raw prompt for AI context
+              rawPrompt: prompt
             }),
           });
           
@@ -435,6 +472,53 @@ export default function Home() {
       timestamp: new Date().toISOString()
     });
   };
+
+  // Function to detect platform and content type from prompt
+  function detectPlatformAndSize(prompt: string): PlatformSize | null {
+    const promptLower = prompt.toLowerCase();
+    
+    // Platform detection
+    let platform: SocialPlatform | null = null;
+    if (promptLower.includes('instagram') || promptLower.includes('ig')) platform = 'instagram';
+    else if (promptLower.includes('facebook') || promptLower.includes('fb')) platform = 'facebook';
+    else if (promptLower.includes('linkedin')) platform = 'linkedin';
+    else if (promptLower.includes('twitter') || promptLower.includes('x.com')) platform = 'twitter';
+    
+    if (!platform) return null;
+    
+    // Content type detection
+    const isStory = promptLower.includes('story') || promptLower.includes('stories');
+    const isAd = promptLower.includes('ad') || promptLower.includes('advertisement');
+    const isCarousel = promptLower.includes('carousel') || promptLower.includes('swipe');
+    const isLandscape = promptLower.includes('landscape') || promptLower.includes('horizontal');
+    
+    // Determine the appropriate size based on platform and content type
+    if (platform === 'instagram') {
+      if (isStory) return PLATFORM_SIZES.instagram.story;
+      if (isAd && isLandscape) return PLATFORM_SIZES.instagram.ad_landscape;
+      if (isAd) return PLATFORM_SIZES.instagram.ad_square;
+      return PLATFORM_SIZES.instagram.post; // Default to square post
+    }
+    
+    if (platform === 'facebook') {
+      if (isAd) return PLATFORM_SIZES.facebook.ad;
+      return PLATFORM_SIZES.facebook.post;
+    }
+    
+    if (platform === 'linkedin') {
+      if (isStory) return PLATFORM_SIZES.linkedin.story;
+      if (isCarousel) return PLATFORM_SIZES.linkedin.carousel;
+      return PLATFORM_SIZES.linkedin.post;
+    }
+    
+    if (platform === 'twitter') {
+      if (isAd && !isLandscape) return PLATFORM_SIZES.twitter.ad_square;
+      if (isAd) return PLATFORM_SIZES.twitter.ad_landscape;
+      return PLATFORM_SIZES.twitter.tweet;
+    }
+    
+    return null;
+  }
 
   return (
     <div 
