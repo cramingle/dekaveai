@@ -60,8 +60,13 @@ export function TokenTopup({ onClose }: TokenTopupProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!selectedPackage || !user?.email) {
-      setError('Please select a package and ensure you are logged in.');
+    if (!selectedPackage) {
+      setError('Please select a package to continue.');
+      return;
+    }
+
+    if (!user?.email || !user?.id) {
+      setError('Please ensure you are logged in to purchase tokens.');
       return;
     }
 
@@ -79,7 +84,6 @@ export function TokenTopup({ onClose }: TokenTopupProps) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${user.token}`
         },
         body: JSON.stringify({
           priceId: selectedPkg.priceId,
@@ -89,16 +93,22 @@ export function TokenTopup({ onClose }: TokenTopupProps) {
         }),
       });
 
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to create payment link');
+      }
+
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create payment link');
+      if (!data.url) {
+        throw new Error('No payment URL received');
       }
 
       // Redirect to payment URL
       window.location.href = data.url;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      console.error('Payment link creation error:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred while creating the payment link');
       setIsLoading(false);
     }
   };

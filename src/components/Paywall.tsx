@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
 import { trackEvent, EventType } from '@/lib/analytics';
@@ -18,13 +18,15 @@ type PaywallProps = {
 
 export function Paywall({ onClose, isLoading = false }: PaywallProps) {
   const { user, signInWithGoogle } = useAuth();
-  const [showCheckout, setShowCheckout] = useState(false);
+  const [showTokenTopup, setShowTokenTopup] = useState(false);
   const [error, setError] = useState('');
 
-  // Show checkout immediately if user is already logged in
-  if (user && !showCheckout) {
-    setShowCheckout(true);
-  }
+  // Show token topup if user is already logged in
+  useEffect(() => {
+    if (user) {
+      setShowTokenTopup(true);
+    }
+  }, [user]);
 
   const handleAuth = async () => {
     try {
@@ -35,7 +37,7 @@ export function Paywall({ onClose, isLoading = false }: PaywallProps) {
       });
       
       await signInWithGoogle();
-      // After successful sign-in, the user state will update and trigger the checkout
+      // After successful sign-in, the user state will update and trigger useEffect
     } catch (error) {
       console.error('Authentication error:', error);
       
@@ -59,7 +61,7 @@ export function Paywall({ onClose, isLoading = false }: PaywallProps) {
       exit={{ opacity: 0 }}
       transition={{ duration: 0.4 }}
     >
-      {showCheckout ? (
+      {showTokenTopup ? (
         <TokenTopup onClose={onClose} />
       ) : (
         <motion.div 
