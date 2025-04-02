@@ -76,21 +76,19 @@ interface EditingContext {
 }
 
 export default function Home() {
-  // Use auth context
-  const { isAuthenticated, tokens, buyTokens, user } = useAuth();
-  
-  // Other state variables
-  const [userPrompt, setUserPrompt] = useState<string>('');
-  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
+  const { user, isLoading, tokens } = useAuth();
+  const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [brandProfileAnalyzed, setBrandProfileAnalyzed] = useState(false);
+  const [userPrompt, setUserPrompt] = useState('');
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [showTokenTopup, setShowTokenTopup] = useState(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [generatedAd, setGeneratedAd] = useState<string | null>(null);
   const [showDropzone, setShowDropzone] = useState<boolean>(false);
-  const [showPaywall, setShowPaywall] = useState<boolean>(false);
-  const [showTokenTopup, setShowTokenTopup] = useState<boolean>(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState<boolean>(false);
   const [windowWidth, setWindowWidth] = useState<number>(0);
   const [isHDQuality, setIsHDQuality] = useState<boolean>(false);
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [maxTokens, setMaxTokens] = useState<number>(10);
   const [tokenInfo, setTokenInfo] = useState<TokenUsageInfo>({
     tier: 'Pioneer',
@@ -100,7 +98,6 @@ export default function Home() {
     imageMultiplier: 2,
   });
   const [isAnalyzingBrand, setIsAnalyzingBrand] = useState<boolean>(false);
-  const [brandProfileAnalyzed, setBrandProfileAnalyzed] = useState<boolean>(false);
   const [editingContext, setEditingContext] = useState<EditingContext>({
     isEditing: false,
     targetMessageId: null,
@@ -110,6 +107,53 @@ export default function Home() {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Restore state from sessionStorage after authentication
+  useEffect(() => {
+    if (user && !isLoading) {
+      const savedState = sessionStorage.getItem('userState');
+      if (savedState) {
+        try {
+          const state = JSON.parse(savedState);
+          setUploadedImages(state.uploadedImages || []);
+          setChatHistory(state.chatHistory || []);
+          setBrandProfileAnalyzed(state.brandProfileAnalyzed || false);
+          setUserPrompt(state.userPrompt || '');
+          // Clear the saved state after restoring
+          sessionStorage.removeItem('userState');
+        } catch (error) {
+          console.error('Error restoring state:', error);
+        }
+      }
+    }
+  }, [user, isLoading]);
+
+  // Save state before showing paywall
+  const saveStateAndShowPaywall = () => {
+    const currentState = {
+      uploadedImages,
+      chatHistory,
+      brandProfileAnalyzed,
+      userPrompt
+    };
+    sessionStorage.setItem('userState', JSON.stringify(currentState));
+    setShowPaywall(true);
+  };
+
+  // Handle token check and purchase flow
+  const handleTokenCheck = () => {
+    if (!user) {
+      saveStateAndShowPaywall();
+      return false;
+    }
+    
+    if (tokens < 1) {
+      setShowTokenTopup(true);
+      return false;
+    }
+    
+    return true;
+  };
+
   // Handle window resizing
   useEffect(() => {
     // Set initial width
@@ -131,16 +175,10 @@ export default function Home() {
   // Show token purchase modal only for authenticated users who have had tokens before
   // but now have 0 tokens (tokens expired), not for new users
   useEffect(() => {
-    // Check if the user has previously had tokens but they are now at 0
-    // This would indicate an existing user who needs to top up
-    if (isAuthenticated && tokens === 0 && user?.hasLoggedInBefore) {
-      setShowTokenTopup(true);
-    }
-    
     // Check for URL parameter (for manual token purchase)
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('showTokenTopup') === 'true' && isAuthenticated) {
+      if (urlParams.get('showTokenTopup') === 'true' && user) {
         setShowTokenTopup(true);
         
         // Clean the URL to remove the parameter (to avoid showing the modal again on refresh)
@@ -149,7 +187,7 @@ export default function Home() {
         window.history.replaceState({}, '', url.toString());
       }
     }
-  }, [isAuthenticated, tokens, user]);
+  }, [user]);
   
   // Token utility functions
   
@@ -236,7 +274,7 @@ export default function Home() {
       url: URL.createObjectURL(file),
       size: file.size
     }));
-    setUploadedImages(prev => [...prev, ...newImages]);
+    setUploadedImages(prev => [...prev, ...newImages.map(img => img.url)]);
     setShowDropzone(false);
     
     // Analyze brand profile if this is the first image
@@ -276,134 +314,35 @@ export default function Home() {
       url: URL.createObjectURL(file),
       size: file.size
     }));
-    setUploadedImages(prev => [...prev, ...newImages]);
+    setUploadedImages(prev => [...prev, ...newImages.map(img => img.url)]);
   };
   
-  const handlePromptSubmit = async (prompt: string) => {
-    if (!prompt.trim()) return;
+  const handlePromptSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!handleTokenCheck()) {
+      return;
+    }
+
+    if (!userPrompt.trim()) return;
     
     // Calculate token cost for this operation
-    const tokenCost = calculateTokenUsage(prompt);
+    const tokenCost = calculateTokenUsage(userPrompt);
     
     setIsGenerating(true);
     
-    // Add prompt to chat history with token usage information
+    // Add prompt to chat history
     setChatHistory(prev => [...prev, {
       id: `prompt-${Date.now()}`,
       type: 'prompt',
-      content: editingContext.isEditing ? `Edit: ${prompt}` : prompt,
+      content: editingContext.isEditing ? `Edit: ${userPrompt}` : userPrompt,
       timestamp: Date.now(),
       messageType: 'text'
     } as ChatMessage]);
     
     // Clear the input after submission
     setUserPrompt('');
-    
-    // If authenticated, subtract tokens and proceed
-    if (isAuthenticated) {
-      // Check if user has enough tokens
-      if (tokens < tokenCost) {
-        setTimeout(() => {
-          setIsGenerating(false);
-          setShowTokenTopup(true);
-        }, 1000);
-        return;
-      }
-      
-      // Subtract tokens
-      try {
-        // Immediately update UI to show token usage
-        const newTokenCount = Math.max(0, tokens - tokenCost);
-        console.log(`Using ${tokenCost} tokens. Current: ${tokens}, New: ${newTokenCount}`);
-        
-        // Call API to update tokens in the backend
-        const result = await buyTokens(`subtract-${tokenCost}`);
-        
-        if (!result.success) {
-          console.error('Error subtracting tokens:', result.error);
-          setIsGenerating(false);
-          alert('Failed to process tokens');
-          return;
-        }
-        
-        try {
-          const imageUrl = editingContext.isEditing 
-            ? editingContext.originalImage 
-            : uploadedImages[0]?.url;
-          
-          if (!imageUrl) {
-            throw new Error('No image provided');
-          }
-          
-          // Call the generate API endpoint
-          const response = await fetch('/api/generate', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              imageUrl,
-              prompt,
-              userId: user?.id,
-              templateName: 'sportsDrink',
-              isHDQuality,
-              isEditing: editingContext.isEditing,
-              originalPrompt: editingContext.originalPrompt,
-              // Add detected platform size
-              size: detectPlatformAndSize(prompt),
-              // Include raw prompt for AI context
-              rawPrompt: prompt
-            }),
-          });
-          
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to generate ad');
-          }
-          
-          const apiResult = await response.json();
-          setGeneratedAd(apiResult.adImageUrl);
-          setChatHistory(prev => [...prev, {
-            id: `result-${Date.now()}`,
-            type: 'result',
-            content: apiResult.adImageUrl,
-            timestamp: Date.now(),
-            messageType: 'image'
-          } as ChatMessage]);
-          
-          // Clear editing context after successful generation
-          if (editingContext.isEditing) {
-            setEditingContext({
-              isEditing: false,
-              targetMessageId: null,
-              originalImage: null,
-              originalPrompt: null
-            });
-          }
-          
-          setIsGenerating(false);
-          return;
-        } catch (error) {
-          console.error('API generation error:', error);
-          setIsGenerating(false);
-          alert('Failed to generate ad. Please try again.');
-          return;
-        }
-      } catch (error) {
-        console.error('Error subtracting tokens:', error);
-        setIsGenerating(false);
-        alert('An error occurred while processing your request');
-      }
-    } else {
-      // Show paywall after a brief loading period for dramatic effect
-      setTimeout(() => {
-        setIsGenerating(false);
-        setShowPaywall(true);
-      }, 1800);
-    }
   };
-  
-  
   
   const handleBuyMoreTokens = () => {
     setShowTokenTopup(true);
@@ -515,7 +454,7 @@ export default function Home() {
         </div>
         
         <div className="flex items-center gap-4">
-          {isAuthenticated ? (
+          {user && (
             <button 
               onClick={handleBuyMoreTokens}
               className={`text-sm bg-zinc-800/50 backdrop-blur-sm rounded-full px-3 py-1.5 hover:bg-zinc-700/50 transition-colors flex items-center ${tokens < 3 ? 'text-amber-400' : tokens < maxTokens / 2 ? 'text-zinc-300' : 'text-zinc-400'}`}
@@ -530,8 +469,6 @@ export default function Home() {
                 </span>
               )}
             </button>
-          ) : (
-            <></>
           )}
           <Link href="/landing">
             <button className="rounded-full bg-zinc-800/80 backdrop-blur-sm w-10 h-10 flex items-center justify-center hover:bg-zinc-700/80 transition-colors">
@@ -612,7 +549,7 @@ export default function Home() {
                 }}>
                   {uploadedImages.map((image) => (
                     <motion.div
-                      key={image.id}
+                      key={image}
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.9 }}
@@ -626,10 +563,10 @@ export default function Home() {
                           : (windowWidth < 640 ? '70px' : '90px'),
                       }}
                     >
-                      <img src={image.url} alt="Uploaded product" className="w-full h-full object-cover" />
+                      <img src={image} alt="Uploaded product" className="w-full h-full object-cover" />
                       <button 
                         onClick={() => {
-                          setUploadedImages(prev => prev.filter(img => img.id !== image.id));
+                          setUploadedImages(prev => prev.filter(img => img !== image));
                         }}
                         className="absolute top-1 right-1 bg-black/70 hover:bg-black/90 rounded-full p-0.5 transition-colors"
                         aria-label="Remove image"
@@ -813,8 +750,8 @@ export default function Home() {
                 </button>
                 
                 <button 
-                  onClick={() => handlePromptSubmit(userPrompt)}
-                  disabled={!userPrompt.trim() || !uploadedImages.length || isGenerating || (isAuthenticated && tokens < calculateTokenUsage(userPrompt))}
+                  onClick={(e) => handlePromptSubmit(e)}
+                  disabled={!userPrompt.trim() || !uploadedImages.length || isGenerating || (user && tokens < calculateTokenUsage(userPrompt)) || false}
                   className="rounded-full bg-white text-black w-8 h-8 flex items-center justify-center hover:bg-gray-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -847,7 +784,7 @@ export default function Home() {
         )}
         
         {/* Paywall overlay - for non-authenticated users */}
-        {showPaywall && (
+        {!isLoading && showPaywall && (
           <Paywall 
             onClose={() => setShowPaywall(false)}
             isLoading={isProcessingPayment}
@@ -855,7 +792,7 @@ export default function Home() {
         )}
         
         {/* Token Topup overlay - for authenticated users */}
-        {showTokenTopup && (
+        {!isLoading && showTokenTopup && (
           <TokenTopup 
             onClose={() => setShowTokenTopup(false)}
           />

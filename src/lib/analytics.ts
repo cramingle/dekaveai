@@ -24,7 +24,10 @@ export enum EventType {
   PAYMENT_REDIRECT = 'payment_redirect',
   PAYMENT_VERIFICATION = 'payment_verification',
   SIGN_IN = 'user_sign_in',
-  ERROR = 'error'
+  ERROR = 'error',
+  TOKEN_PURCHASE_INITIATED = 'token_purchase_initiated',
+  PAYMENT_LINK_CREATED = 'payment_link_created',
+  PAYMENT_LINK_ERROR = 'payment_link_error',
 }
 
 interface EventProperties {

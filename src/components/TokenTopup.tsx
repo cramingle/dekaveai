@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { decrypt } from '@/lib/crypto';
+import { trackEvent, EventType } from '@/lib/analytics';
 
 type TokenPackage = {
   id: string;
@@ -18,11 +19,11 @@ type TokenTopupProps = {
 };
 
 export function TokenTopup({ onClose }: TokenTopupProps) {
-  const [selectedPackage, setSelectedPackage] = useState<string>('');
+  const { user, refreshTokenCount } = useAuth();
+  const [selectedPlan, setSelectedPlan] = useState<TokenPackage | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const { user } = useAuth();
-  
+  const [error, setError] = useState('');
+
   const tokenPackages: TokenPackage[] = [
     { 
       id: 'basic', 
@@ -58,51 +59,61 @@ export function TokenTopup({ onClose }: TokenTopupProps) {
     },
   ];
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handlePurchase = async (plan: TokenPackage) => {
+    if (!user) return;
     
-    if (!selectedPackage) {
-      setError('Please select a package to continue.');
-      return;
-    }
-
-    if (!user?.email || !user?.id) {
-      setError('Please ensure you are logged in to purchase tokens.');
-      return;
-    }
-
     setIsLoading(true);
-    setError(null);
-
+    setError('');
+    
     try {
-      const selectedPkg = tokenPackages.find(pkg => pkg.id === selectedPackage);
-      if (!selectedPkg) {
-        throw new Error('Invalid package selected');
-      }
+      // Track token purchase attempt
+      trackEvent(EventType.TOKEN_PURCHASE_INITIATED, {
+        planId: plan.id,
+        tokenAmount: plan.tokens,
+        price: plan.price,
+        timestamp: new Date().toISOString()
+      });
 
-      // Create checkout session via POST request
-      const response = await fetch('/api/checkout', {
+      const response = await fetch('/api/create-payment-link', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          packageId: selectedPkg.id,
-          email: user.email,
-          userId: user.id
+          planId: plan.id,
+          userId: user.id,
         }),
       });
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to create checkout session');
+        throw new Error('Failed to create payment link');
       }
 
-      const { redirectUrl } = await response.json();
-      window.location.href = decrypt(redirectUrl);
-    } catch (err) {
-      console.error('Checkout error:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred while creating checkout session');
+      const data = await response.json();
+      
+      // Track successful payment link creation
+      trackEvent(EventType.PAYMENT_LINK_CREATED, {
+        planId: plan.id,
+        timestamp: new Date().toISOString()
+      });
+
+      // Open payment link in new tab to preserve state
+      window.open(data.url, '_blank');
+      
+      // Close the modal but keep the page state
+      onClose();
+    } catch (error) {
+      console.error('Payment link creation error:', error);
+      
+      // Track payment link creation error
+      trackEvent(EventType.PAYMENT_LINK_ERROR, {
+        planId: plan.id,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      });
+      
+      setError('Failed to create payment link. Please try again.');
+    } finally {
       setIsLoading(false);
     }
   };
@@ -176,14 +187,14 @@ export function TokenTopup({ onClose }: TokenTopupProps) {
             </div>
           )}
           
-          <motion.form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
+          <motion.form onSubmit={(e) => { e.preventDefault(); handlePurchase(selectedPlan as TokenPackage); }} className="space-y-3 sm:space-y-4">
             <div className="grid grid-cols-1 gap-2 sm:gap-3">
               {tokenPackages.map((pkg, index) => (
                 <motion.div
                   key={pkg.id}
-                  className={`relative rounded-xl border ${selectedPackage === pkg.id ? 'border-white/30 bg-white/5' : 'border-zinc-700/50 bg-zinc-800/30'} 
+                  className={`relative rounded-xl border ${selectedPlan === pkg ? 'border-white/30 bg-white/5' : 'border-zinc-700/50 bg-zinc-800/30'} 
                             p-3 sm:p-4 cursor-pointer hover:bg-white/5 transition-colors`}
-                  onClick={() => setSelectedPackage(pkg.id)}
+                  onClick={() => setSelectedPlan(pkg)}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.2 + index * 0.05 }}
@@ -194,8 +205,8 @@ export function TokenTopup({ onClose }: TokenTopupProps) {
                     </div>
                   )}
                   <div className="flex items-center">
-                    <div className={`w-4 h-4 rounded-full mr-3 flex-shrink-0 border ${selectedPackage === pkg.id ? 'border-white bg-white' : 'border-zinc-600'}`}>
-                      {selectedPackage === pkg.id && (
+                    <div className={`w-4 h-4 rounded-full mr-3 flex-shrink-0 border ${selectedPlan === pkg ? 'border-white bg-white' : 'border-zinc-600'}`}>
+                      {selectedPlan === pkg && (
                         <motion.div 
                           className="w-2 h-2 bg-zinc-900 rounded-full m-auto"
                           initial={{ scale: 0 }}
@@ -228,12 +239,12 @@ export function TokenTopup({ onClose }: TokenTopupProps) {
             
             <motion.button
               type="submit"
-              disabled={isLoading || !selectedPackage}
+              disabled={isLoading || !selectedPlan}
               className={`w-full flex justify-center py-3 px-4 rounded-lg shadow-lg
                         text-sm font-medium text-black bg-white hover:bg-zinc-200 
                         transition-all transform hover:scale-[1.02] active:scale-[0.98]
                         mt-4 sm:mt-6
-                        ${(isLoading || !selectedPackage) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        ${(isLoading || !selectedPlan) ? 'opacity-50 cursor-not-allowed' : ''}`}
               whileTap={{ scale: 0.98 }}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -244,7 +255,7 @@ export function TokenTopup({ onClose }: TokenTopupProps) {
                   <LoadingSpinner variant="small" color="#ffffff" message="Processing purchase..." />
                 </div>
               ) : (
-                `Purchase ${selectedPackage ? formatPrice(tokenPackages.find(p => p.id === selectedPackage)?.price || 0) : 'Tokens'}`
+                `Purchase ${selectedPlan ? formatPrice(selectedPlan.price) : 'Tokens'}`
               )}
             </motion.button>
           </motion.form>

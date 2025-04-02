@@ -57,6 +57,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const initAuth = async () => {
       try {
+        // Check if we have a code in the URL
+        const params = new URLSearchParams(window.location.search);
+        const hasAuthCode = params.has('code');
+
+        // Keep loading state true while processing auth code
+        if (hasAuthCode) {
+          setIsLoading(true);
+        }
+
         // Get current session
         const { data: { session } } = await supabase.auth.getSession();
         
@@ -85,6 +94,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setTokensExpiryDate(userData.tokens_expiry_date);
             setTier(userData.tier || 'Pioneer');
             setIsAuthenticated(true);
+
+            // If we had an auth code, clean up the URL
+            if (hasAuthCode) {
+              const url = new URL(window.location.href);
+              url.searchParams.delete('code');
+              window.history.replaceState({}, '', url.toString());
+            }
           }
         }
       } catch (error) {
