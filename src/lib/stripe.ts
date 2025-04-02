@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import type { TokenPackage } from './stripe/constants';
+import { encrypt } from '@/lib/crypto';
 
 // MCP Stripe function declarations
 declare function mcp_stripe_create_customer(params: {
@@ -67,6 +68,14 @@ export async function createCheckoutSession(
     if (!packageDetails) {
       throw new Error('Invalid package selected');
     }
+
+    // Encrypt session parameters
+    const encryptedParams = encrypt(JSON.stringify({
+      session_id: '{CHECKOUT_SESSION_ID}',
+      package: packageId
+    }));
+    
+    const secureSuccessUrl = `${successUrl.split('?')[0]}?data=${encryptedParams}`;
 
     const paymentLink = await mcp_stripe_create_payment_link({
       price: packageDetails.priceId,

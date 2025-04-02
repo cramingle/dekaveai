@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { decrypt } from '@/lib/crypto';
 
 type TokenPackage = {
   id: string;
@@ -79,36 +80,29 @@ export function TokenTopup({ onClose }: TokenTopupProps) {
         throw new Error('Invalid package selected');
       }
 
-      // Create payment link using MCP Stripe tool
-      const response = await fetch('/api/create-payment-link', {
+      // Create checkout session via POST request
+      const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          priceId: selectedPkg.priceId,
+          packageId: selectedPkg.id,
           email: user.email,
-          userId: user.id,
-          packageId: selectedPkg.id
+          userId: user.id
         }),
       });
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.error || 'Failed to create payment link');
+        throw new Error(data.error || 'Failed to create checkout session');
       }
 
-      const data = await response.json();
-
-      if (!data.url) {
-        throw new Error('No payment URL received');
-      }
-
-      // Redirect to payment URL
-      window.location.href = data.url;
+      const { redirectUrl } = await response.json();
+      window.location.href = decrypt(redirectUrl);
     } catch (err) {
-      console.error('Payment link creation error:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred while creating the payment link');
+      console.error('Checkout error:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred while creating checkout session');
       setIsLoading(false);
     }
   };

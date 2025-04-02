@@ -1,44 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server';
 import logger from '@/lib/logger';
+import { decrypt } from '@/lib/crypto';
+import { rateLimit } from '@/lib/rate-limit';
+import { EventType } from '@/lib/analytics';
 
 // In a real production app, this would typically write to a database
 // or send events to an external analytics service like Datadog, NewRelic, etc.
 
-export async function POST(request: NextRequest) {
+// Rate limit configuration
+const limiter = rateLimit({
+  interval: 60 * 1000, // 1 minute
+  uniqueTokenPerInterval: 500
+});
+
+export async function POST(request: Request) {
   try {
-    // Get the IP address for analytics
-    const ip = request.headers.get('x-forwarded-for') || 'unknown';
+    // Apply rate limiting - 100 requests per minute
+    await limiter.check(100, 'TRACK_EVENT');
+
+    const { eventData } = await request.json();
     
-    // Get the event data
-    const { event, data, timestamp } = await request.json();
-    
-    if (!event) {
-      return NextResponse.json(
-        { error: 'Missing event type' },
-        { status: 400 }
-      );
+    if (!eventData) {
+      return NextResponse.json({ error: 'Missing event data' }, { status: 400 });
     }
-    
-    // Prepare the event data
-    const eventData = {
-      event,
-      data,
-      timestamp: timestamp || new Date().toISOString(),
-      ip: ip.split(',')[0] // Only get the first IP in case of proxies
-    };
-    
-    // Log the event
-    logger.info(`Tracking event: ${event}`, eventData);
-    
-    // This would call an external analytics service
-    // Example: await sendToAnalyticsService(eventData);
-    
+
+    // Decrypt and validate event data
+    const decryptedData = JSON.parse(decrypt(eventData));
+    const { type, properties } = decryptedData;
+
+    // Validate event type
+    if (!Object.values(EventType).includes(type)) {
+      return NextResponse.json({ error: 'Invalid event type' }, { status: 400 });
+    }
+
+    // Process the event (implement your tracking logic here)
+    // For example, send to analytics service, store in database, etc.
+    console.log('Tracking event:', type, properties);
+
     return NextResponse.json({ success: true });
   } catch (error) {
-    logger.error('Error tracking event:', error);
+    console.error('Error tracking event:', error);
     return NextResponse.json(
       { error: 'Failed to track event' },
       { status: 500 }
     );
   }
-} 
+}
+
+// Remove GET method to enforce POST-only
+export const GET = undefined; 

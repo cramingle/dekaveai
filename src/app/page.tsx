@@ -711,25 +711,12 @@ export default function Home() {
                 </AnimatePresence>
               </div>
             )}
-
-            {/* Loading indicator */}
-            {isGenerating && (
-              <motion.div 
-                className="flex flex-col items-center justify-center py-8 w-full"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                <LoadingSpinner variant="small" color="#ffffff" message="Generating your ad..." />
-              </motion.div>
-            )}
           </div>
         </AnimatePresence>
       </div>
 
-      {/* Loading indicator for brand analysis */}
-      {isAnalyzingBrand && (
+      {/* Loading indicators */}
+      {(isAnalyzingBrand || isGenerating) && (
         <motion.div 
           className="flex flex-col items-center justify-center py-8 w-full"
           initial={{ opacity: 0 }}
@@ -737,7 +724,11 @@ export default function Home() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
         >
-          <LoadingSpinner variant="small" color="#ffffff" message="Analyzing your brand profile..." />
+          <LoadingSpinner 
+            variant="small" 
+            color="#ffffff" 
+            message={isAnalyzingBrand ? "Analyzing your brand profile..." : "Generating your ad..."} 
+          />
         </motion.div>
       )}
 
