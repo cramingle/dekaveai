@@ -2,7 +2,13 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
-const KEY = process.env.ENCRYPTION_KEY || randomBytes(32);
+
+if (!process.env.ENCRYPTION_KEY) {
+  throw new Error('ENCRYPTION_KEY environment variable is required for encryption/decryption');
+}
+
+// Convert the hex string key to a buffer
+const KEY = Buffer.from(process.env.ENCRYPTION_KEY, 'hex');
 
 export function encrypt(text: string): string {
   const iv = randomBytes(IV_LENGTH);

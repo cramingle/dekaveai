@@ -30,6 +30,9 @@ const serverEnvSchema = z.object({
   // Database
   DATABASE_URL: z.string().optional(),
   
+  // Encryption
+  ENCRYPTION_KEY: z.string().min(32, 'Encryption key must be at least 32 characters long'),
+  
   // Supabase private variables
   SUPABASE_URL: z.string().min(1),
   SUPABASE_ANON_KEY: z.string().min(1),
@@ -58,6 +61,7 @@ const parseEnv = () => {
       NODE_ENV: process.env.NODE_ENV,
       VERCEL_ENV: process.env.VERCEL_ENV,
       DATABASE_URL: process.env.DATABASE_URL || process.env.SUPABASE_URL?.replace('https://', 'postgresql://postgres:postgres@')?.replace('.supabase.co', '.supabase.co:5432/postgres'),
+      ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
       SUPABASE_URL: process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
       SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,

@@ -52,6 +52,9 @@ A Next.js application that uses OpenAI's latest models to transform product phot
    NEXTAUTH_URL=http://localhost:3000
    NEXTAUTH_SECRET=your-secret-key
 
+   # Encryption
+   ENCRYPTION_KEY=your-32-byte-hex-encryption-key
+
    # Google OAuth
    GOOGLE_CLIENT_ID=your-google-client-id
    GOOGLE_CLIENT_SECRET=your-google-client-secret

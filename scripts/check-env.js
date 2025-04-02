@@ -8,6 +8,7 @@
 const requiredEnvVars = [
   'NEXTAUTH_URL',
   'NEXTAUTH_SECRET',
+  'ENCRYPTION_KEY',
   'GOOGLE_CLIENT_ID',
   'GOOGLE_CLIENT_SECRET',
   'OPENAI_API_KEY',
