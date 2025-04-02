@@ -95,11 +95,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setTier(userData.tier || 'Pioneer');
             setIsAuthenticated(true);
 
-            // If we had an auth code, clean up the URL
+            // If we had an auth code, restore saved state
             if (hasAuthCode) {
-              const url = new URL(window.location.href);
-              url.searchParams.delete('code');
-              window.history.replaceState({}, '', url.toString());
+              const savedState = sessionStorage.getItem('userState');
+              console.log('Saved state after redirect:', savedState);
+              
+              if (savedState) {
+                try {
+                  const state = JSON.parse(savedState);
+                  console.log('Parsed state after redirect:', state);
+                  
+                  // Dispatch event with the restored state
+                  window.dispatchEvent(new CustomEvent('authStateRestored', { 
+                    detail: {
+                      uploadedImages: state.uploadedImages || [],
+                      chatHistory: state.chatHistory || [],
+                      brandProfileAnalyzed: state.brandProfileAnalyzed || false,
+                      userPrompt: state.userPrompt || ''
+                    }
+                  }));
+                  
+                  // Clean up the URL and saved state
+                  const url = new URL(window.location.href);
+                  url.searchParams.delete('code');
+                  window.history.replaceState({}, '', url.toString());
+                  sessionStorage.removeItem('userState');
+                } catch (error) {
+                  console.error('Error parsing saved state after redirect:', error);
+                }
+              }
             }
           }
         }
@@ -193,10 +217,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         timestamp: new Date().toISOString()
       });
       
+      // Get the current URL to use as redirect
+      const currentUrl = window.location.href;
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}`
+          redirectTo: currentUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent'
+          }
         }
       });
 
