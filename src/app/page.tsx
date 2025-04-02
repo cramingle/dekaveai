@@ -36,6 +36,13 @@ interface ChatMessage {
   messageType: 'text' | 'image';
 }
 
+interface EditingContext {
+  isEditing: boolean;
+  targetMessageId: string | null;
+  originalImage: string | null;
+  originalPrompt?: string | null;
+}
+
 export default function Home() {
   // Use auth context
   const { isAuthenticated, tokens, tier, buyTokens, refreshTokenCount, user } = useAuth();
@@ -62,6 +69,12 @@ export default function Home() {
   });
   const [isAnalyzingBrand, setIsAnalyzingBrand] = useState<boolean>(false);
   const [brandProfileAnalyzed, setBrandProfileAnalyzed] = useState<boolean>(false);
+  const [editingContext, setEditingContext] = useState<EditingContext>({
+    isEditing: false,
+    targetMessageId: null,
+    originalImage: null,
+    originalPrompt: null
+  });
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -116,9 +129,29 @@ export default function Home() {
     // Base token cost for standard quality
     let tokenCost = 10000;
     
+    // If we're in edit mode, reduce the base cost since we're modifying existing content
+    if (editingContext.isEditing) {
+      // Editing costs 60% of a new generation since we're leveraging existing content
+      tokenCost = 6000;
+    }
+    
     // Double the cost for HD quality
     if (isHDQuality) {
-      tokenCost = 20000;
+      tokenCost = tokenCost * 2;
+    }
+    
+    // Add complexity multiplier based on prompt length and sophistication
+    const promptComplexity = Math.min(1.5, 1 + (prompt.length / 500)); // Max 50% increase for long prompts
+    tokenCost = Math.floor(tokenCost * promptComplexity);
+    
+    // For edits, check if it's a major revision
+    if (editingContext.isEditing) {
+      const majorEditKeywords = ['completely', 'entirely', 'totally', 'redesign', 'overhaul'];
+      const isMajorEdit = majorEditKeywords.some(keyword => prompt.toLowerCase().includes(keyword));
+      if (isMajorEdit) {
+        // Major edits cost 80% of a new generation
+        tokenCost = Math.floor(tokenCost * (8/6)); // Adjust from 60% to 80%
+      }
     }
     
     return tokenCost;
@@ -186,7 +219,7 @@ export default function Home() {
     setChatHistory(prev => [...prev, {
       id: `prompt-${Date.now()}`,
       type: 'prompt',
-      content: prompt,
+      content: editingContext.isEditing ? `Edit: ${prompt}` : prompt,
       timestamp: Date.now(),
       tokensUsed: tokenCost,
       messageType: 'text'
@@ -223,7 +256,9 @@ export default function Home() {
         }
         
         try {
-          const imageUrl = uploadedImages[0]?.url;
+          const imageUrl = editingContext.isEditing 
+            ? editingContext.originalImage 
+            : uploadedImages[0]?.url;
           
           if (!imageUrl) {
             throw new Error('No image provided');
@@ -238,9 +273,11 @@ export default function Home() {
             body: JSON.stringify({
               imageUrl,
               prompt,
-              userId: user?.id, // Use actual user ID from authenticated session
-              templateName: 'sportsDrink', // Or dynamically choose based on user input
-              isHDQuality
+              userId: user?.id,
+              templateName: 'sportsDrink',
+              isHDQuality,
+              isEditing: editingContext.isEditing,
+              originalPrompt: editingContext.originalPrompt
             }),
           });
           
@@ -258,6 +295,17 @@ export default function Home() {
             timestamp: Date.now(),
             messageType: 'image'
           } as ChatMessage]);
+          
+          // Clear editing context after successful generation
+          if (editingContext.isEditing) {
+            setEditingContext({
+              isEditing: false,
+              targetMessageId: null,
+              originalImage: null,
+              originalPrompt: null
+            });
+          }
+          
           setIsGenerating(false);
           return;
         } catch (error) {
@@ -588,11 +636,34 @@ export default function Home() {
                         </div>
                       ) : (
                         <div className="flex justify-start mb-4">
-                          <div className="bg-zinc-900/50 backdrop-blur-sm rounded-2xl rounded-tl-sm p-3 max-w-[90%]">
+                          <div className="bg-zinc-900/50 backdrop-blur-sm rounded-2xl rounded-tl-sm p-3 max-w-[90%] relative group">
                             {item.messageType === 'text' ? (
                               <p className="text-white">{item.content}</p>
                             ) : (
-                              <img src={item.content} alt="Generated result" className="rounded-lg max-h-[450px] w-auto" />
+                              <>
+                                <img src={item.content} alt="Generated result" className="rounded-lg max-h-[450px] w-auto" />
+                                <button
+                                  onClick={() => {
+                                    setEditingContext({
+                                      isEditing: true,
+                                      targetMessageId: item.id,
+                                      originalImage: item.content,
+                                      originalPrompt: chatHistory
+                                        .slice(0, chatHistory.findIndex(msg => msg.id === item.id))
+                                        .filter(msg => msg.type === 'prompt')
+                                        .pop()?.content || null
+                                    });
+                                    // Focus the textarea
+                                    const textarea = document.querySelector('textarea');
+                                    if (textarea) {
+                                      textarea.focus();
+                                    }
+                                  }}
+                                  className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 text-white text-xs px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                                >
+                                  Edit
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>
@@ -641,14 +712,45 @@ export default function Home() {
           transition={{ duration: 0.5 }}
         >
           <div className="max-w-3xl mx-auto">
+            {/* Editing Indicator */}
+            {editingContext.isEditing && (
+              <div className="mb-2 px-4 py-2 bg-zinc-800/50 rounded-lg flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-zinc-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                  </svg>
+                  <span className="text-sm text-zinc-400">Editing previous image</span>
+                </div>
+                <button
+                  onClick={() => setEditingContext({
+                    isEditing: false,
+                    targetMessageId: null,
+                    originalImage: null,
+                    originalPrompt: null
+                  })}
+                  className="text-zinc-500 hover:text-white transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            )}
+            
             <div className="relative rounded-2xl bg-zinc-900/50 backdrop-blur-sm border border-white/10 overflow-hidden">
               <textarea
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
-                placeholder={brandProfileAnalyzed ? "Describe the ad you want to create..." : "Upload a brand image to begin..."}
+                placeholder={
+                  editingContext.isEditing
+                    ? "Describe how you'd like to modify this image..."
+                    : brandProfileAnalyzed 
+                      ? "Describe the ad you want to create..." 
+                      : "Upload a brand image to begin..."
+                }
                 className="w-full bg-transparent border-none px-6 py-4 text-white placeholder-zinc-500 focus:outline-none resize-none"
                 style={{minHeight: '56px'}}
-                disabled={!uploadedImages.length || isGenerating || !brandProfileAnalyzed}
+                disabled={!brandProfileAnalyzed || isGenerating}
               />
               
               <div className="absolute bottom-2 right-2 flex space-x-2 items-center">
