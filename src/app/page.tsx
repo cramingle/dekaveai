@@ -109,23 +109,25 @@ export default function Home() {
   
   // Restore state from sessionStorage after authentication
   useEffect(() => {
-    if (user && !isLoading) {
-      const savedState = sessionStorage.getItem('userState');
-      if (savedState) {
-        try {
-          const state = JSON.parse(savedState);
-          setUploadedImages(state.uploadedImages || []);
-          setChatHistory(state.chatHistory || []);
-          setBrandProfileAnalyzed(state.brandProfileAnalyzed || false);
-          setUserPrompt(state.userPrompt || '');
-          // Clear the saved state after restoring
-          sessionStorage.removeItem('userState');
-        } catch (error) {
-          console.error('Error restoring state:', error);
-        }
-      }
-    }
-  }, [user, isLoading]);
+    const handleStateRestoration = (event: CustomEvent<any>) => {
+      const state = event.detail;
+      setUploadedImages(state.uploadedImages || []);
+      setChatHistory(state.chatHistory || []);
+      setBrandProfileAnalyzed(state.brandProfileAnalyzed || false);
+      setUserPrompt(state.userPrompt || '');
+      // Clear the saved state after restoring
+      sessionStorage.removeItem('userState');
+      // Close the paywall if it's open
+      setShowPaywall(false);
+    };
+
+    // Add event listener for state restoration
+    window.addEventListener('authStateRestored', handleStateRestoration as EventListener);
+
+    return () => {
+      window.removeEventListener('authStateRestored', handleStateRestoration as EventListener);
+    };
+  }, []);
 
   // Save state before showing paywall
   const saveStateAndShowPaywall = () => {

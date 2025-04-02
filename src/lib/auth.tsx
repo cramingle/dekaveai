@@ -140,6 +140,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setTokensExpiryDate(userData.tokens_expiry_date);
             setTier(userData.tier || 'Pioneer');
             setIsAuthenticated(true);
+
+            // Restore saved state if exists
+            const savedState = sessionStorage.getItem('userState');
+            if (savedState) {
+              try {
+                const state = JSON.parse(savedState);
+                // Emit an event to notify components about state restoration
+                window.dispatchEvent(new CustomEvent('authStateRestored', { detail: state }));
+              } catch (error) {
+                console.error('Error parsing saved state:', error);
+              }
+            }
           }
         } else if (event === 'SIGNED_OUT') {
           setUser(null);

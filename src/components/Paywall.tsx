@@ -37,8 +37,8 @@ export function Paywall({ onClose, isLoading = false }: PaywallProps) {
       });
       
       await signInWithGoogle();
-      // After successful sign-in, the user state will update and trigger useEffect
-      // The parent component will handle restoring the previous state
+      // After successful sign-in, the auth state change will trigger
+      // state restoration via the custom event
     } catch (error) {
       console.error('Authentication error:', error);
       
