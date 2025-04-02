@@ -86,10 +86,10 @@ export async function POST(request: Request) {
       timestamp: new Date().toISOString() 
     });
     
-    // Return encrypted redirect URL
-    return NextResponse.json({
-      redirectUrl: encrypt(checkoutUrl)
-    });
+    // Since we're already on the server, we can encrypt directly
+    const redirectUrl = encrypt(checkoutUrl);
+    
+    return NextResponse.json({ redirectUrl });
   } catch (error) {
     logger.error('Error in checkout route:', error);
     return NextResponse.json(
