@@ -32,7 +32,6 @@ interface ChatMessage {
   type: 'prompt' | 'result';
   content: string;
   timestamp: number;
-  tokensUsed?: number;
   messageType: 'text' | 'image';
 }
 
@@ -294,7 +293,6 @@ export default function Home() {
       type: 'prompt',
       content: editingContext.isEditing ? `Edit: ${prompt}` : prompt,
       timestamp: Date.now(),
-      tokensUsed: tokenCost,
       messageType: 'text'
     } as ChatMessage]);
     
@@ -665,11 +663,6 @@ export default function Home() {
                             maxWidth: windowWidth < 640 ? '85%' : '350px' 
                           }}>
                             <p className="text-white">{item.content}</p>
-                            {item.tokensUsed && (
-                              <p className="text-zinc-500 text-xs mt-1 text-right">
-                                {item.tokensUsed} token{item.tokensUsed !== 1 ? 's' : ''} used
-                              </p>
-                            )}
                           </div>
                         </div>
                       ) : (
