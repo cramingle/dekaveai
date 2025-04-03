@@ -27,7 +27,7 @@ interface ChatMessage {
   type: 'prompt' | 'result';
   content: string;
   timestamp: number;
-  messageType: 'text' | 'image';
+  messageType: 'text' | 'image' | 'mixed';
 }
 
 type SocialPlatform = 'instagram' | 'facebook' | 'linkedin' | 'twitter';
@@ -911,8 +911,8 @@ export default function Home() {
     return (
       <div className="flex justify-start my-2">
         <div className="relative rounded-lg overflow-hidden border border-white/20" style={{ 
-          width: windowWidth < 640 ? '80px' : '100px',
-          height: windowWidth < 640 ? '80px' : '100px',
+          width: windowWidth < 640 ? '60px' : '800px',
+          height: windowWidth < 640 ? '60px' : '80px',
         }}>
           <img 
             src={stagedImage} 
@@ -932,6 +932,99 @@ export default function Home() {
       </div>
     );
   };
+
+  // Add a helper function to group chat messages
+  const getGroupedChatMessages = () => {
+    const groupedMessages: Array<{
+      id: string;
+      type: 'prompt' | 'result';
+      content: any; // Use any for flexibility with content type
+      timestamp: number;
+      messageType: 'text' | 'image' | 'mixed';
+      hasMultipleImages?: boolean;
+    }> = [];
+    
+    let i = 0;
+    while (i < chatHistory.length) {
+      const current = chatHistory[i];
+      
+      // Check if the next message is from the same user and close in time (within 5 seconds)
+      if (i + 1 < chatHistory.length && 
+          chatHistory[i + 1].type === current.type && 
+          chatHistory[i + 1].timestamp - current.timestamp < 5000) {
+        
+        // Start a group with the current message
+        let group: any = {
+          id: current.id,
+          type: current.type,
+          timestamp: current.timestamp,
+          messageType: current.messageType,
+          hasMultipleImages: false
+        };
+        
+        // Initialize content based on the first message's type
+        if (current.messageType === 'image') {
+          group.content = { images: [current.content], text: '' };
+        } else {
+          group.content = { images: [], text: current.content };
+        }
+        
+        // Collect consecutive messages from the same user
+        let j = i + 1;
+        let hasText = current.messageType === 'text';
+        let hasImage = current.messageType === 'image';
+        let imageCount = hasImage ? 1 : 0;
+        
+        while (j < chatHistory.length && 
+               chatHistory[j].type === current.type && 
+               chatHistory[j].timestamp - chatHistory[j-1].timestamp < 5000) {
+          
+          if (chatHistory[j].messageType === 'image') {
+            hasImage = true;
+            imageCount++;
+            group.content.images.push(chatHistory[j].content);
+          } else {
+            hasText = true;
+            if (group.content.text) {
+              group.content.text += "\n\n" + chatHistory[j].content;
+            } else {
+              group.content.text = chatHistory[j].content;
+            }
+          }
+          
+          j++;
+        }
+        
+        // Update group properties
+        if (hasText && hasImage) {
+          group.messageType = 'mixed';
+        } else if (hasText) {
+          group.content = group.content.text;
+        } else if (hasImage && group.content.images.length === 1) {
+          group.content = group.content.images[0];
+        } else if (hasImage) {
+          group.content = group.content.images;
+        }
+        
+        group.hasMultipleImages = imageCount > 1;
+        
+        // Add the group to the result
+        groupedMessages.push(group);
+        
+        // Skip the messages we've processed
+        i = j;
+      } else {
+        // Add the current message as is
+        groupedMessages.push(current);
+        i++;
+      }
+    }
+    
+    return groupedMessages;
+  };
+
+  // Update the chat history rendering with grouped messages
+  const groupedChatMessages = getGroupedChatMessages();
 
   return (
     <div 
@@ -1152,7 +1245,7 @@ export default function Home() {
             {chatHistory.length > 0 && (
               <div className="flex-1 space-y-6 w-full">
                 <AnimatePresence mode="popLayout">
-                  {chatHistory.map((item) => (
+                  {groupedChatMessages.map((item) => (
                     <motion.div
                       key={item.id}
                       initial={{ opacity: 0, y: 20 }}
@@ -1163,13 +1256,101 @@ export default function Home() {
                     >
                       {item.type === 'prompt' ? (
                         <div className="flex justify-end mb-4">
-                          <div className="bg-zinc-800 rounded-2xl rounded-tr-sm px-6 py-4 max-w-[80%]" style={{ 
+                          <div className="bg-zinc-800 rounded-2xl rounded-tr-sm px-6 py-4" style={{ 
                             maxWidth: windowWidth < 640 ? '85%' : '350px' 
                           }}>
                             {item.messageType === 'text' ? (
                               <p className="text-white">{item.content}</p>
+                            ) : item.messageType === 'image' ? (
+                              item.hasMultipleImages ? (
+                                // Grid layout for multiple images
+                                <div className="grid grid-cols-2 gap-2">
+                                  {Array.isArray(item.content) && item.content.map((imageUrl, index) => (
+                                    <img 
+                                      key={index}
+                                      src={imageUrl} 
+                                      alt={`User uploaded ${index + 1}`}
+                                      className="rounded-lg w-full object-cover"
+                                      style={{
+                                        height: windowWidth < 640 ? '120px' : '150px',
+                                        width: '100%'
+                                      }}
+                                    />
+                                  ))}
+                                </div>
+                              ) : (
+                                // Single image
+                                <img 
+                                  src={Array.isArray(item.content) ? item.content[0] : item.content} 
+                                  alt="User uploaded"
+                                  className="rounded-lg w-full object-cover"
+                                  style={{
+                                    height: windowWidth < 640 ? '120px' : '150px',
+                                    width: '100%'
+                                  }}
+                                />
+                              )
                             ) : (
-                              <img src={item.content} alt="User uploaded" className="rounded-lg w-full max-h-[250px] object-contain" />
+                              // Mixed content (text + image)
+                              <div className="flex flex-col space-y-3">
+                                {typeof item.content === 'object' ? (
+                                  <>
+                                    {/* Check if it's an array or has images property */}
+                                    {Array.isArray(item.content) && (
+                                      // If it's an array of images
+                                      <div className="grid grid-cols-2 gap-2 mb-3">
+                                        {item.content.map((imageUrl: string, index: number) => (
+                                          <img 
+                                            key={index}
+                                            src={imageUrl} 
+                                            alt={`User uploaded ${index + 1}`}
+                                            className="rounded-lg w-full object-cover"
+                                            style={{
+                                              height: windowWidth < 640 ? '120px' : '150px',
+                                              width: '100%'
+                                            }}
+                                          />
+                                        ))}
+                                      </div>
+                                    )}
+                                    
+                                    {!Array.isArray(item.content) && item.content.images && Array.isArray(item.content.images) && (
+                                      // If it has images property
+                                      item.hasMultipleImages ? (
+                                        <div className="grid grid-cols-2 gap-2 mb-3">
+                                          {item.content.images.map((imageUrl: string, index: number) => (
+                                            <img 
+                                              key={index}
+                                              src={imageUrl} 
+                                              alt={`User uploaded ${index + 1}`}
+                                              className="rounded-lg w-full object-cover"
+                                              style={{
+                                                height: windowWidth < 640 ? '120px' : '150px',
+                                                width: '100%'
+                                              }}
+                                            />
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <img 
+                                          src={item.content.images[0]} 
+                                          alt="User uploaded"
+                                          className="rounded-lg w-full object-cover mb-3"
+                                          style={{
+                                            height: windowWidth < 640 ? '120px' : '150px',
+                                            width: '100%'
+                                          }}
+                                        />
+                                      )
+                                    )}
+                                    
+                                    {/* Text displayed after the image(s) */}
+                                    {typeof item.content === 'object' && 'text' in item.content && item.content.text && (
+                                      <p className="text-white">{item.content.text}</p>
+                                    )}
+                                  </>
+                                ) : null}
+                              </div>
                             )}
                           </div>
                         </div>
@@ -1178,31 +1359,108 @@ export default function Home() {
                           <div className="bg-zinc-900/50 backdrop-blur-sm rounded-2xl rounded-tl-sm p-3 max-w-[90%] relative group">
                             {item.messageType === 'text' ? (
                               <p className="text-white">{item.content}</p>
-                            ) : (
-                              <>
-                                <img src={item.content} alt="Generated result" className="rounded-lg max-h-[450px] w-auto" />
+                            ) : item.messageType === 'image' ? (
+                              <div className="relative">
+                                <img 
+                                  src={Array.isArray(item.content) ? item.content[0] : item.content}
+                                  alt="Generated result" 
+                                  className="rounded-lg w-full" 
+                                  style={{
+                                    maxHeight: '450px',
+                                    width: '100%',
+                                    objectFit: 'contain'
+                                  }}
+                                />
                                 <button
                                   onClick={() => {
+                                    // Get the actual image URL regardless of content structure
+                                    let originalImageUrl = '';
+                                    if (typeof item.content === 'string') {
+                                      originalImageUrl = item.content;
+                                    } else if (Array.isArray(item.content) && item.content.length > 0) {
+                                      originalImageUrl = item.content[0];
+                                    } else if (typeof item.content === 'object' && 'images' in item.content && item.content.images.length > 0) {
+                                      originalImageUrl = item.content.images[0];
+                                    }
+                                    
                                     setEditingContext({
                                       isEditing: true,
                                       targetMessageId: item.id,
-                                      originalImage: item.content,
+                                      originalImage: originalImageUrl,
                                       originalPrompt: chatHistory
                                         .slice(0, chatHistory.findIndex(msg => msg.id === item.id))
                                         .filter(msg => msg.type === 'prompt')
                                         .pop()?.content || null
                                     });
-                                    // Focus the textarea
                                     const textarea = document.querySelector('textarea');
-                                    if (textarea) {
-                                      textarea.focus();
-                                    }
+                                    if (textarea) textarea.focus();
                                   }}
                                   className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 text-white text-xs px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                                 >
                                   Edit
                                 </button>
-                              </>
+                              </div>
+                            ) : (
+                              // Mixed message from assistant (typically doesn't happen but added for completeness)
+                              <div className="flex flex-col space-y-3">
+                                {typeof item.content === 'object' ? (
+                                  <>
+                                    {/* Check if it's an array or has images property */}
+                                    {Array.isArray(item.content) && (
+                                      // If it's an array of images
+                                      <div className="grid grid-cols-2 gap-2 mb-3">
+                                        {item.content.map((imageUrl: string, index: number) => (
+                                          <img 
+                                            key={index}
+                                            src={imageUrl} 
+                                            alt={`User uploaded ${index + 1}`}
+                                            className="rounded-lg w-full object-cover"
+                                            style={{
+                                              height: windowWidth < 640 ? '120px' : '150px',
+                                              width: '100%'
+                                            }}
+                                          />
+                                        ))}
+                                      </div>
+                                    )}
+                                    
+                                    {!Array.isArray(item.content) && item.content.images && Array.isArray(item.content.images) && (
+                                      // If it has images property
+                                      item.hasMultipleImages ? (
+                                        <div className="grid grid-cols-2 gap-2 mb-3">
+                                          {item.content.images.map((imageUrl: string, index: number) => (
+                                            <img 
+                                              key={index}
+                                              src={imageUrl} 
+                                              alt={`User uploaded ${index + 1}`}
+                                              className="rounded-lg w-full object-cover"
+                                              style={{
+                                                height: windowWidth < 640 ? '120px' : '150px',
+                                                width: '100%'
+                                              }}
+                                            />
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <img 
+                                          src={item.content.images[0]} 
+                                          alt="User uploaded"
+                                          className="rounded-lg w-full object-cover mb-3"
+                                          style={{
+                                            height: windowWidth < 640 ? '120px' : '150px',
+                                            width: '100%'
+                                          }}
+                                        />
+                                      )
+                                    )}
+                                    
+                                    {/* Text displayed after the image(s) */}
+                                    {typeof item.content === 'object' && 'text' in item.content && item.content.text && (
+                                      <p className="text-white">{item.content.text}</p>
+                                    )}
+                                  </>
+                                ) : null}
+                              </div>
                             )}
                           </div>
                         </div>
