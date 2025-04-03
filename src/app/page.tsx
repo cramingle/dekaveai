@@ -10,11 +10,6 @@ import { useAuth } from '@/lib/auth';
 import { trackEvent, EventType } from '@/lib/analytics';
 import { extractBrandProfile, saveBrandProfile } from '@/lib/brand-profile';
 
-interface UploadedImage {
-  id: string;
-  url: string;
-  size?: number; // Image size in bytes
-}
 
 type TokenTier = 'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord';
 
@@ -135,8 +130,9 @@ export default function Home() {
   const [progress, setProgress] = useState<number>(0);
   // Add local token state to track changes
   const [localTokens, setLocalTokens] = useState<number>(tokens);
+  // Add state for staged images (images waiting to be sent with prompt)
+  const [stagedImage, setStagedImage] = useState<string | null>(null);
   
-  // Create a more stable ref for the file input
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Initialize and sync local tokens with auth tokens
@@ -383,47 +379,8 @@ export default function Home() {
   console.log('Proceeding to render main app UI, isLoading:', isLoading);
   
   // Save state (for potential restoration) - no need for paywall anymore
-  const saveState = () => {
-    // Create a stable copy of the current state with all relevant data
-    const currentState = {
-      uploadedImages,
-      chatHistory,
-      brandProfileAnalyzed,
-      userPrompt,
-      chatStarted: !!uploadedImages.length || chatHistory.length > 0,
-      isLoadingResponse: false,
-      systemMessages,
-      editingContext: {
-        isEditing: false,
-        targetMessageId: null,
-        originalImage: null,
-        originalPrompt: null
-      }
-    };
-    
-    // Save in a try-catch to handle potential serialization errors
-    try {
-      console.log('Saving complete state:', currentState);
-      sessionStorage.setItem('userState', JSON.stringify(currentState));
-      
-      // Also save in localStorage as backup in case sessionStorage is cleared
-      try {
-        localStorage.setItem('dekave_state_backup', JSON.stringify({
-          timestamp: Date.now(),
-          hasState: true
-        }));
-      } catch (err) {
-        console.error('Error saving state backup marker:', err);
-      }
-    } catch (error) {
-      console.error('Error saving state:', error);
-    }
-  };
 
   // Handle token check - always returns true in free mode
-  const handleTokenCheck = () => {
-    return true; // Always have tokens in free mode
-  };
   
   // Token utility functions
   
@@ -505,9 +462,6 @@ export default function Home() {
     // Brand analysis has a fixed cost
     return 5000;
   };
-
-  // Add a new state for staged images (images waiting to be sent with prompt)
-  const [stagedImage, setStagedImage] = useState<string | null>(null);
 
   // Modify handleImageUpload to handle both brand images and product images
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
