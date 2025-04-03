@@ -540,13 +540,79 @@ export default function Home() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setShowDropzone(false);
+    
+    // Filter only image files
     const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+    if (files.length === 0) return;
+    
     const newImages = files.map(file => ({
       id: `img-${Math.random().toString(36).substr(2, 9)}-${Date.now()}`,
       url: URL.createObjectURL(file),
       size: file.size
     }));
+    
     setUploadedImages(prev => [...prev, ...newImages.map(img => img.url)]);
+    
+    // Analyze brand profile if this is the first image
+    if (!brandProfileAnalyzed && newImages.length > 0) {
+      setIsAnalyzingBrand(true);
+      
+      // Calculate and deduct tokens for brand analysis
+      const brandAnalysisTokens = calculateBrandAnalysisTokens();
+      deductTokens(brandAnalysisTokens);
+      
+      // Analyze brand profile from the dropped image
+      (async () => {
+        try {
+          const profile = await extractBrandProfile(newImages[0].url);
+          
+          // In free mode, user might be available or might be temporary
+          const userId = user?.id || localStorage.getItem('dekave_temp_user') 
+            ? JSON.parse(localStorage.getItem('dekave_temp_user') || '{}').id
+            : null;
+            
+          if (profile && userId) {
+            await saveBrandProfile(userId, profile);
+          } else if (profile) {
+            // If we can't save the profile, just continue without saving
+            console.log('Brand profile analyzed but not saved due to missing user ID');
+          }
+          
+          // Add system message to chat history
+          setChatHistory(prev => [...prev, {
+            id: `system-${Date.now()}`,
+            type: 'result',
+            content: "I understand your brand profile. Now, tell me what kind of ad you'd like to create.",
+            timestamp: Date.now(),
+            messageType: 'text'
+          } as ChatMessage]);
+        } catch (error) {
+          console.error('Error analyzing brand profile:', error);
+          setChatHistory(prev => [...prev, {
+            id: `error-${Date.now()}`,
+            type: 'result',
+            content: "Sorry, there was an error analyzing your brand profile. You can still continue.",
+            timestamp: Date.now(),
+            messageType: 'text'
+          } as ChatMessage]);
+        } finally {
+          // Always ensure we reset states even if there's an error
+          setIsAnalyzingBrand(false);
+          setBrandProfileAnalyzed(true);
+          setIsGenerating(false);
+        }
+      })();
+    }
+    
+    // Set chat started to true
+    setChatStarted(true);
+    
+    // Track image upload event
+    trackEvent(EventType.IMAGE_UPLOAD, {
+      count: files.length,
+      totalSize: files.reduce((total, file) => total + file.size, 0),
+      types: files.map(file => file.type)
+    });
   };
   
   const handlePromptSubmit = async (e: React.FormEvent) => {

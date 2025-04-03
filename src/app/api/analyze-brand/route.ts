@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     });
 
     const responsePromise = openai.responses.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       input: [
         {
           role: "user",
