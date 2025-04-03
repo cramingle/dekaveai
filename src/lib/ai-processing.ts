@@ -399,7 +399,7 @@ Provide the analysis in a structured JSON format matching the BrandProfile inter
   }
 }
 
-// Use proper template from Supabase in processRequest function
+// Ensure processRequest properly uses the analyzed brand profile
 export async function processRequest(
   imageUrl: string,
   prompt: string,
@@ -422,9 +422,16 @@ export async function processRequest(
       totalCostUSD: 0
     };
     
-    // Step 1: Analyze brand profile first
-    console.log('Analyzing brand profile...');
+    // Step 1: Always analyze brand profile from the uploaded image
+    console.log('Analyzing brand profile from image...');
     const { analysis: brandProfile, tokenUsage: brandTokens } = await analyzeBrandProfile(imageUrl);
+    
+    // Validate that brand profile was successfully analyzed
+    if (!brandProfile || Object.keys(brandProfile).length === 0) {
+      throw new Error('Failed to analyze brand profile from image. Please try again with a clearer brand image.');
+    }
+    
+    console.log('Brand profile analysis successful:', JSON.stringify(brandProfile, null, 2));
     costData.imageAnalysisTokens += brandTokens;
     
     // Add brand analysis to conversation context
@@ -437,25 +444,11 @@ export async function processRequest(
     
     // Add product analysis to conversation context
     conversationManager.addAssistantMessage(`I've analyzed your product image. Here are the key details: ${JSON.stringify(productAnalysis)}`);
-    
-    // Get brand profile from template
-    let brandProfileFromTemplate: any;
-    
-    if (templateName) {
-      // Use pre-defined template
-      brandProfileFromTemplate = await loadBrandTemplate(templateName);
       
-      // Update system prompt with brand template information
-      conversationManager.updateSystemPrompt(
-        `You are an AI assistant specializing in creating professional product advertisements. You analyze product images and generate marketing materials based on user prompts and brand templates. Current brand template: ${JSON.stringify(brandProfileFromTemplate)}`
-      );
-    } else if (referenceAdUrls.length > 0) {
-      // For now, use default template to save on costs
-      brandProfileFromTemplate = await loadBrandTemplate('sportsDrink');
-      console.log('Using default template as reference ad analysis is not implemented yet');
-    } else {
-      throw new Error('Either a template name or reference ad URLs must be provided');
-    }
+    // Update system prompt with brand profile information
+    conversationManager.updateSystemPrompt(
+      `You are an AI assistant specializing in creating professional product advertisements. You analyze product images and generate marketing materials based on user prompts and the analyzed brand profile. Current brand profile: ${JSON.stringify(brandProfile)}`
+    );
     
     // Step 3: Create a detailed prompt for DALL-E 3 
     console.log('Creating DALL-E prompt...');
@@ -463,10 +456,26 @@ export async function processRequest(
     // Use conversation context for generating the DALL-E prompt
     const messageContext = conversationManager.getMessages();
     
+    // Verify brand profile properties exist before using them
+    const brandStyle = brandProfile.brandStyle || 'professional';
+    const colorPalette = Array.isArray(brandProfile.colorPalette) && brandProfile.colorPalette.length > 0 
+      ? brandProfile.colorPalette.join(', ') 
+      : 'brand colors';
+    const moodAndTone = brandProfile.moodAndTone || 'professional';
+    const targetAudience = brandProfile.targetAudience || 'general audience';
+    
+    // Log the values being used
+    console.log('Using brand profile values for DALL-E prompt:', {
+      brandStyle,
+      colorPalette,
+      moodAndTone,
+      targetAudience
+    });
+    
     // Add specific instruction for DALL-E prompt creation
     messageContext.push({
       role: 'user',
-      content: `Based on our conversation so far, create a detailed DALL-E 3 prompt for a professional advertisement. Focus on layout, colors, product placement, and typography. Consider the product analysis and brand template. Keep the prompt under 900 characters. Include the following elements from the brand profile: style: ${brandProfile.brandStyle}, colors: ${brandProfile.colorPalette.join(', ')}, mood: ${brandProfile.moodAndTone}, target audience: ${brandProfile.targetAudience}.`
+      content: `Based on our conversation so far, create a detailed DALL-E 3 prompt for a professional advertisement. Focus on layout, colors, product placement, and typography. Consider the product analysis and the analyzed brand profile. Keep the prompt under 900 characters. Include the following elements from the brand profile: style: ${brandStyle}, colors: ${colorPalette}, mood: ${moodAndTone}, target audience: ${targetAudience}.`
     });
     
     // Use conversation history when generating the DALL-E prompt
@@ -520,6 +529,6 @@ export async function processRequest(
     };
   } catch (error) {
     console.error('Error processing request:', error);
-    throw new Error('Failed to process request. Please try again.');
+    throw new Error('Failed to process request. Please try again with a clearer brand image.');
   }
 } 
