@@ -463,6 +463,36 @@ export default function Home() {
     return 5000;
   };
 
+  // Add a helper function to add the brand analysis completion message
+  const addBrandAnalysisCompletionMessage = () => {
+    // Generate a stable ID for system message to prevent duplicates
+    const messageId = `system-brand-analysis-${Date.now()}`;
+    
+    // Check if a similar message already exists before adding
+    setChatHistory(prev => {
+      // Check if a similar welcome message already exists
+      const hasWelcomeMessage = prev.some(msg => 
+        msg.type === 'result' && 
+        msg.content.includes("I understand your brand profile")
+      );
+      
+      // Only add if no similar message exists
+      if (!hasWelcomeMessage) {
+        console.log('Adding brand analysis completion message');
+        return [...prev, {
+          id: messageId,
+          type: 'result',
+          content: "I understand your brand profile. Now, tell me what kind of ad you'd like to create.",
+          timestamp: Date.now(),
+          messageType: 'text'
+        } as ChatMessage];
+      }
+      
+      console.log('Brand welcome message already exists, skipping duplicate');
+      return prev;
+    });
+  };
+
   // Modify handleImageUpload to handle both brand images and product images
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
@@ -503,14 +533,8 @@ export default function Home() {
               console.log('Brand profile analyzed but not saved due to missing user ID');
             }
             
-            // Add system message to chat history
-            setChatHistory(prev => [...prev, {
-              id: `system-${Date.now()}`,
-              type: 'result',
-              content: "I understand your brand profile. Now, tell me what kind of ad you'd like to create.",
-              timestamp: Date.now(),
-              messageType: 'text'
-            } as ChatMessage]);
+            // Use the helper function instead of direct setChatHistory
+            addBrandAnalysisCompletionMessage();
           } catch (error) {
             console.error('Error analyzing brand profile:', error);
             setChatHistory(prev => [...prev, {
@@ -600,14 +624,8 @@ export default function Home() {
             console.log('Brand profile analyzed but not saved due to missing user ID');
           }
           
-          // Add system message to chat history
-          setChatHistory(prev => [...prev, {
-            id: `system-${Date.now()}`,
-            type: 'result',
-            content: "I understand your brand profile. Now, tell me what kind of ad you'd like to create.",
-            timestamp: Date.now(),
-            messageType: 'text'
-          } as ChatMessage]);
+          // Use the helper function instead of direct setChatHistory
+          addBrandAnalysisCompletionMessage();
         } catch (error) {
           console.error('Error analyzing brand profile:', error);
           setChatHistory(prev => [...prev, {
