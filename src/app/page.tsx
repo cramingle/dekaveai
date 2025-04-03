@@ -75,6 +75,23 @@ interface EditingContext {
   originalPrompt?: string | null;
 }
 
+interface AppState {
+  chatStarted?: boolean;
+  isLoadingResponse?: boolean;
+  chatHistory?: ChatMessage[];
+  systemMessages?: ChatMessage[];
+  selectedProduct?: any;
+  productName?: string;
+  productDescription?: string;
+  targetAudience?: string;
+  draftResponse?: string;
+  productImages?: any[];
+  progress?: number;
+  uploadedImages?: any[];
+  brandProfileAnalyzed?: boolean;
+  userPrompt?: string;
+}
+
 export default function Home() {
   const { user, isLoading, tokens, isAuthenticated } = useAuth();
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
@@ -105,6 +122,18 @@ export default function Home() {
     originalPrompt: null
   });
   
+  // Add missing state declarations
+  const [chatStarted, setChatStarted] = useState<boolean>(false);
+  const [isLoadingResponse, setIsLoadingResponse] = useState<boolean>(false);
+  const [systemMessages, setSystemMessages] = useState<ChatMessage[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [productName, setProductName] = useState<string>('');
+  const [productDescription, setProductDescription] = useState<string>('');
+  const [targetAudience, setTargetAudience] = useState<string>('');
+  const [draftResponse, setDraftResponse] = useState<string>('');
+  const [productImages, setProductImages] = useState<any[]>([]);
+  const [progress, setProgress] = useState<number>(0);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Log authentication state for debugging
@@ -117,76 +146,117 @@ export default function Home() {
     });
   }, [isAuthenticated, user, tokens, isLoading]);
 
-  // Restore state from sessionStorage after authentication
+  // Listen for state restoration events
   useEffect(() => {
-    const handleStateRestoration = (event: CustomEvent<any>) => {
+    // Store reference to current state values at the time this effect runs
+    const currentIsAuthenticated = isAuthenticated;
+    const currentUser = user;
+    
+    // Create the event handler
+    const handleStateRestoration = (event: CustomEvent<AppState>) => {
       try {
-        console.log('State restoration event received with data:', event.detail);
+        console.log('Handling state restoration event:', event.detail);
         const state = event.detail;
         
         if (!state) {
-          console.warn('Received empty state during restoration');
+          console.warn('Received empty state in restoration event');
           return;
         }
-        
-        // Restore all relevant app state
-        setUploadedImages(state.uploadedImages || []);
-        setChatHistory(prevHistory => {
-          // Avoid duplicate messages by checking IDs
-          const newMessages = (state.chatHistory || []) as ChatMessage[];
-          const existingIds = new Set(prevHistory.map(msg => msg.id));
-          const uniqueNewMessages = newMessages.filter(msg => !existingIds.has(msg.id));
-          
-          return [...prevHistory, ...uniqueNewMessages];
-        });
-        setBrandProfileAnalyzed(!!state.brandProfileAnalyzed);
-        setUserPrompt(state.userPrompt || '');
-        
-        // Close modals
-        setShowPaywall(false);
-        
-        // Ensure any cached brand analysis results are displayed safely
-        if (state.brandProfileAnalyzed && 
-            state.uploadedImages?.length > 0 && 
-            !chatHistory.some(msg => msg.type === 'result' && msg.content.includes("understand your brand profile"))) {
-          
-          setTimeout(() => {
-            setChatHistory(prev => {
-              // Check again to prevent double-adding during React rendering cycles
-              if (prev.some(msg => msg.type === 'result' && msg.content.includes("understand your brand profile"))) {
-                return prev;
-              }
-              
-              return [
-                ...prev, 
-                {
-                  id: `system-${Date.now()}`,
-                  type: 'result',
-                  content: "I understand your brand profile. Now, tell me what kind of ad you'd like to create.",
-                  timestamp: Date.now(),
-                  messageType: 'text'
-                } as ChatMessage
-              ];
-            });
-          }, 0);
+
+        // Safe application of state updates
+        if (state.chatStarted !== undefined) {
+          setChatStarted(state.chatStarted);
         }
         
-        // Clear any saved state
-        sessionStorage.removeItem('userState');
+        if (state.isLoadingResponse !== undefined) {
+          setIsLoadingResponse(state.isLoadingResponse);
+        }
         
-        console.log('App state restored after authentication');
+        if (state.chatHistory) {
+          // Use functional update to avoid depending on chatHistory in dependencies
+          setChatHistory(prevHistory => {
+            const existingIds = new Set(prevHistory.map(msg => msg.id));
+            const newMessages = state.chatHistory?.filter(msg => !existingIds.has(msg.id)) || [];
+            
+            if (newMessages.length === 0) {
+              console.log('No new messages to add to chat history');
+              return prevHistory;
+            }
+            
+            console.log(`Adding ${newMessages.length} messages to chat history`);
+            return [...prevHistory, ...newMessages];
+          });
+        }
+        
+        if (state.systemMessages) {
+          // Use functional update to avoid stale state issues
+          setSystemMessages((prevSystemMessages: ChatMessage[]) => {
+            if (!state.systemMessages || state.systemMessages.length === 0) {
+              return prevSystemMessages;
+            }
+            
+            const existingIds = new Set(prevSystemMessages.map(msg => msg.id));
+            const newMessages = state.systemMessages.filter(msg => !existingIds.has(msg.id));
+            
+            if (newMessages.length === 0) {
+              return prevSystemMessages;
+            }
+            
+            return [...prevSystemMessages, ...newMessages];
+          });
+        }
+
+        // Handle other state properties as needed
+        if (state.selectedProduct !== undefined) {
+          setSelectedProduct(state.selectedProduct);
+        }
+        
+        if (state.productName !== undefined) {
+          setProductName(state.productName);
+        }
+        
+        if (state.productDescription !== undefined) {
+          setProductDescription(state.productDescription);
+        }
+        
+        if (state.targetAudience !== undefined) {
+          setTargetAudience(state.targetAudience);
+        }
+        
+        if (state.draftResponse !== undefined) {
+          setDraftResponse(state.draftResponse);
+        }
+        
+        if (state.productImages !== undefined) {
+          setProductImages(state.productImages);
+        }
+        
+        if (state.progress !== undefined) {
+          setProgress(state.progress);
+        }
+        
+        // Clean up any additional information
+        if (currentIsAuthenticated && currentUser) {
+          console.log('User is authenticated, setting up session');
+          
+          if (state.chatHistory?.length && !chatStarted) {
+            console.log('Setting chat as started from restored state');
+            setChatStarted(true);
+          }
+        }
       } catch (error) {
-        console.error('Error during state restoration:', error);
+        console.error('Error handling state restoration:', error);
       }
     };
 
     // Add event listener for state restoration
-    window.addEventListener('authStateRestored', handleStateRestoration as EventListener);
+    window.addEventListener('restoreState', handleStateRestoration as EventListener);
 
+    // Clean up the event listener
     return () => {
-      window.removeEventListener('authStateRestored', handleStateRestoration as EventListener);
+      window.removeEventListener('restoreState', handleStateRestoration as EventListener);
     };
-  }, []);
+  }, [isAuthenticated, user, chatStarted]); // Only depend on auth state and chat started, avoid chatHistory
 
   // Show a full-screen loading state until authentication is resolved
   if (isLoading) {

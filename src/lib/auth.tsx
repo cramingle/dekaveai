@@ -55,31 +55,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Function to safely dispatch state restoration event
   const dispatchStateRestorationEvent = (state: any) => {
-    if (!state) {
-      console.warn('Attempted to dispatch state restoration with empty state');
-      return;
-    }
-    
     try {
-      console.log('Dispatching state restoration event');
-      window.dispatchEvent(new CustomEvent('authStateRestored', { 
-        detail: {
-          uploadedImages: state.uploadedImages || [],
-          chatHistory: state.chatHistory || [],
-          brandProfileAnalyzed: state.brandProfileAnalyzed || false,
-          userPrompt: state.userPrompt || ''
-        }
-      }));
+      if (!state || Object.keys(state).length === 0) {
+        console.warn('Attempted to dispatch state restoration with empty state');
+        return;
+      }
       
-      // Clean up the saved state to prevent duplicate restoration
-      sessionStorage.removeItem('userState');
+      console.log('Dispatching state restoration event with state:', state);
+      
+      // Use standard DOM event for better cross-browser compatibility
+      const event = new CustomEvent('restoreState', { 
+        detail: state,
+        bubbles: true, 
+        cancelable: true 
+      });
+      
+      // Use queueMicrotask for more predictable timing
+      queueMicrotask(() => {
+        try {
+          window.dispatchEvent(event);
+        } catch (error) {
+          console.error('Error dispatching state restoration event:', error);
+        }
+      });
     } catch (error) {
-      console.error('Error dispatching state restoration event:', error);
+      console.error('Failed to create state restoration event:', error);
     }
   };
 
   // Initialize auth state
   useEffect(() => {
+    let isMounted = true;
+    
     const initAuth = async () => {
       try {
         // Check if we have a code in the URL
@@ -88,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Keep loading state true while processing auth code
         if (hasAuthCode) {
-          setIsLoading(true);
+          if (isMounted) setIsLoading(true);
           
           // Get the code from the URL
           const code = params.get('code');
@@ -100,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             
             if (error) {
               console.error('Error exchanging code for session:', error);
-              setIsLoading(false);
+              if (isMounted) setIsLoading(false);
               return;
             }
             
@@ -116,7 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
             
             // Immediately set authenticated state if we have a session
-            if (data.session) {
+            if (data.session && isMounted) {
               console.log('Setting initial authenticated state from code exchange');
               setIsAuthenticated(true);
               
@@ -127,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 .eq('id', data.session.user.id)
                 .single();
                 
-              if (userData) {
+              if (userData && isMounted) {
                 setUser({
                   id: data.session.user.id,
                   email: data.session.user.email!,
@@ -154,12 +161,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     console.log('Parsing state during code exchange:', state);
                     
                     // Dispatch event with the restored state
-                    dispatchStateRestorationEvent(state);
+                    setTimeout(() => {
+                      if (isMounted) dispatchStateRestorationEvent(state);
+                    }, 0);
                   } catch (error) {
                     console.error('Error parsing saved state during code exchange:', error);
                   }
                 }
-              } else {
+              } else if (isMounted) {
                 // Create user if not found
                 try {
                   console.log('Creating new user during code exchange for:', data.session.user.id);
@@ -195,7 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Get current session
         const { data: { session } } = await supabase.auth.getSession();
         
-        if (session?.user) {
+        if (session?.user && isMounted) {
           // Get user data from database
           const { data: userData } = await supabase
             .from('users')
@@ -232,7 +241,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   console.log('Parsed state after redirect:', state);
                   
                   // Dispatch event with the restored state
-                  dispatchStateRestorationEvent(state);
+                  setTimeout(() => {
+                    if (isMounted) dispatchStateRestorationEvent(state);
+                  }, 0);
                 } catch (error) {
                   console.error('Error parsing saved state after redirect:', error);
                 }
@@ -243,7 +254,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error('Error initializing auth:', error);
       } finally {
-        setIsLoading(false);
+        if (isMounted) setIsLoading(false);
       }
     };
 
@@ -258,6 +269,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.log('User signed in:', session.user.id);
           
           try {
+            // Only process if component is still mounted
+            if (!isMounted) return;
+            
             // Get user data from database
             const { data: userData, error } = await supabase
               .from('users')
@@ -270,6 +284,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               
               // Create user entry if not found
               try {
+                if (!isMounted) return;
+                
                 console.log('Creating new user data for:', session.user.id);
                 const { error: insertError } = await supabase
                   .from('users')
@@ -283,7 +299,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   
                 if (insertError) {
                   console.error('Error creating user data:', insertError);
-                } else {
+                } else if (isMounted) {
                   // Set user state with default values
                   const userState = {
                     id: session.user.id,
@@ -304,7 +320,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   if (savedState) {
                     try {
                       const state = JSON.parse(savedState);
-                      dispatchStateRestorationEvent(state);
+                      setTimeout(() => {
+                        if (isMounted) dispatchStateRestorationEvent(state);
+                      }, 0);
                     } catch (error) {
                       console.error('Error parsing saved state:', error);
                     }
@@ -317,8 +335,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               return;
             }
 
-            // If user data was found in the database
-            if (userData) {
+            // If user data was found in the database and component still mounted
+            if (userData && isMounted) {
               const userState = {
                 id: session.user.id,
                 email: session.user.email!,
@@ -347,65 +365,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   const state = JSON.parse(savedState);
                   console.log('Parsed state:', state);
                   
-                  // Dispatch event with the restored state
-                  dispatchStateRestorationEvent(state);
+                  // Dispatch event with the restored state using setTimeout to avoid React errors
+                  setTimeout(() => {
+                    if (isMounted) dispatchStateRestorationEvent(state);
+                  }, 0);
                 } catch (error) {
                   console.error('Error parsing saved state:', error);
                 }
-              }
-            } else {
-              console.error('No user data found in database for user:', session.user.id);
-              
-              // Create user data if it doesn't exist - same as above
-              try {
-                console.log('Creating new user data for:', session.user.id);
-                const { error: insertError } = await supabase
-                  .from('users')
-                  .insert({
-                    id: session.user.id,
-                    email: session.user.email,
-                    tokens: 0,
-                    tier: 'Pioneer',
-                    created_at: new Date().toISOString()
-                  });
-                  
-                if (insertError) {
-                  console.error('Error creating user data:', insertError);
-                } else {
-                  // Set user state with default values
-                  const userState = {
-                    id: session.user.id,
-                    email: session.user.email!,
-                    tokens: 0,
-                    tier: 'Pioneer' as 'Pioneer',
-                    hasLoggedInBefore: false,
-                    token: session.access_token,
-                  };
-                  
-                  setUser(userState);
-                  setTokens(0);
-                  setTier('Pioneer');
-                  setIsAuthenticated(true);
-                  
-                  // Restore saved state if exists
-                  const savedState = sessionStorage.getItem('userState');
-                  if (savedState) {
-                    try {
-                      const state = JSON.parse(savedState);
-                      dispatchStateRestorationEvent(state);
-                    } catch (error) {
-                      console.error('Error parsing saved state:', error);
-                    }
-                  }
-                }
-              } catch (error) {
-                console.error('Error in user creation process:', error);
               }
             }
           } catch (error) {
             console.error('Error in onAuthStateChange handler:', error);
           }
-        } else if (event === 'SIGNED_OUT') {
+        } else if (event === 'SIGNED_OUT' && isMounted) {
           setUser(null);
           setTokens(0);
           setTokensExpiryDate(undefined);
@@ -416,6 +388,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, []);
