@@ -133,8 +133,15 @@ export default function Home() {
   const [draftResponse, setDraftResponse] = useState<string>('');
   const [productImages, setProductImages] = useState<any[]>([]);
   const [progress, setProgress] = useState<number>(0);
+  // Add local token state to track changes
+  const [localTokens, setLocalTokens] = useState<number>(tokens);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Initialize and sync local tokens with auth tokens
+  useEffect(() => {
+    setLocalTokens(tokens);
+  }, [tokens]);
   
   // Log temporary user state for debugging
   useEffect(() => {
@@ -429,56 +436,105 @@ export default function Home() {
     return Math.min(totalTokens, 10000); // Cap at 10,000 tokens per request
   };
   
+  // Deduct tokens and update UI immediately
+  const deductTokens = (amount: number) => {
+    const newAmount = Math.max(0, localTokens - amount);
+    setLocalTokens(newAmount);
+    localStorage.setItem('dekave_temp_tokens', newAmount.toString());
+  };
+
+  // Calculate token cost for brand analysis
+  const calculateBrandAnalysisTokens = (): number => {
+    // Brand analysis has a fixed cost
+    return 5000;
+  };
+
+  // Update handleImageUpload to deduct tokens for brand analysis
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    const newImages = files.map(file => ({
-      id: `img-${Math.random().toString(36).substr(2, 9)}-${Date.now()}`,
-      url: URL.createObjectURL(file),
-      size: file.size
-    }));
-    setUploadedImages(prev => [...prev, ...newImages.map(img => img.url)]);
-    setShowDropzone(false);
-    
-    // Analyze brand profile if this is the first image
-    if (!brandProfileAnalyzed && newImages.length > 0) {
-      setIsAnalyzingBrand(true);
-      const profile = await extractBrandProfile(newImages[0].url);
+    try {
+      const files = Array.from(e.target.files || []);
+      if (files.length === 0) return;
       
-      // In free mode, user might be available or might be temporary
-      const userId = user?.id || localStorage.getItem('dekave_temp_user') 
-        ? JSON.parse(localStorage.getItem('dekave_temp_user') || '{}').id
-        : null;
+      const newImages = files.map(file => ({
+        id: `img-${Math.random().toString(36).substr(2, 9)}-${Date.now()}`,
+        url: URL.createObjectURL(file),
+        size: file.size
+      }));
+      
+      setUploadedImages(prev => [...prev, ...newImages.map(img => img.url)]);
+      setShowDropzone(false);
+      
+      // Analyze brand profile if this is the first image
+      if (!brandProfileAnalyzed && newImages.length > 0) {
+        setIsAnalyzingBrand(true);
         
-      if (profile && userId) {
-        await saveBrandProfile(userId, profile);
-      } else if (profile) {
-        // If we can't save the profile, just continue without saving
-        console.log('Brand profile analyzed but not saved due to missing user ID');
+        // Calculate and deduct tokens for brand analysis
+        const brandAnalysisTokens = calculateBrandAnalysisTokens();
+        deductTokens(brandAnalysisTokens);
+        
+        try {
+          const profile = await extractBrandProfile(newImages[0].url);
+          
+          // In free mode, user might be available or might be temporary
+          const userId = user?.id || localStorage.getItem('dekave_temp_user') 
+            ? JSON.parse(localStorage.getItem('dekave_temp_user') || '{}').id
+            : null;
+            
+          if (profile && userId) {
+            await saveBrandProfile(userId, profile);
+          } else if (profile) {
+            // If we can't save the profile, just continue without saving
+            console.log('Brand profile analyzed but not saved due to missing user ID');
+          }
+          
+          // Add system message to chat history
+          setChatHistory(prev => [...prev, {
+            id: `system-${Date.now()}`,
+            type: 'result',
+            content: "I understand your brand profile. Now, tell me what kind of ad you'd like to create.",
+            timestamp: Date.now(),
+            messageType: 'text'
+          } as ChatMessage]);
+        } catch (error) {
+          console.error('Error analyzing brand profile:', error);
+          setChatHistory(prev => [...prev, {
+            id: `error-${Date.now()}`,
+            type: 'result',
+            content: "Sorry, there was an error analyzing your brand profile. You can still continue.",
+            timestamp: Date.now(),
+            messageType: 'text'
+          } as ChatMessage]);
+        } finally {
+          // Always ensure we reset states even if there's an error
+          setIsAnalyzingBrand(false);
+          setBrandProfileAnalyzed(true);
+          setIsGenerating(false);
+        }
       }
       
-      // Add system message to chat history
-      setChatHistory(prev => [...prev, {
-        id: `system-${Date.now()}`,
-        type: 'result',
-        content: "I understand your brand profile. Now, tell me what kind of ad you'd like to create.",
-        timestamp: Date.now(),
-        messageType: 'text'
-      } as ChatMessage]);
+      // Reset generation state to ensure upload button is enabled
+      setIsGenerating(false);
       
-      // Ensure we reset the analysis state
+      // Set chat started to true
+      setChatStarted(true);
+      
+      // Track image upload event
+      trackEvent(EventType.IMAGE_UPLOAD, {
+        count: files.length,
+        totalSize: files.reduce((total, file) => total + file.size, 0),
+        types: files.map(file => file.type)
+      });
+      
+      // Make sure file input is reset
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      // Reset states to ensure UI is not stuck
       setIsAnalyzingBrand(false);
-      setBrandProfileAnalyzed(true);
+      setIsGenerating(false);
     }
-    
-    // Reset generation state to ensure upload button is enabled
-    setIsGenerating(false);
-    
-    // Track image upload event
-    trackEvent(EventType.IMAGE_UPLOAD, {
-      count: files.length,
-      totalSize: files.reduce((total, file) => total + file.size, 0),
-      types: files.map(file => file.type)
-    });
   };
   
   const handleDrop = (e: React.DragEvent) => {
@@ -499,28 +555,30 @@ export default function Home() {
     // No need to check tokens, always have enough
     if (!userPrompt.trim()) return;
     
-    // Calculate token cost for this operation
-    const tokenCost = calculateTokenUsage(userPrompt);
-    
-    setIsGenerating(true);
-    
-    // Add prompt to chat history
-    setChatHistory(prev => [...prev, {
-      id: `prompt-${Date.now()}`,
-      type: 'prompt',
-      content: editingContext.isEditing ? `Edit: ${userPrompt}` : userPrompt,
-      timestamp: Date.now(),
-      messageType: 'text'
-    } as ChatMessage]);
-    
-    // Track token usage in localStorage directly
-    const updatedTokens = Math.max(0, tokens - tokenCost);
-    localStorage.setItem('dekave_temp_tokens', updatedTokens.toString());
-    
-    // Clear the input after submission
-    setUserPrompt('');
-    
     try {
+      // Calculate token cost for this operation
+      const tokenCost = calculateTokenUsage(userPrompt);
+      
+      // Deduct tokens immediately to update UI
+      deductTokens(tokenCost);
+      
+      setIsGenerating(true);
+      
+      // Add prompt to chat history
+      setChatHistory(prev => [...prev, {
+        id: `prompt-${Date.now()}`,
+        type: 'prompt',
+        content: editingContext.isEditing ? `Edit: ${userPrompt}` : userPrompt,
+        timestamp: Date.now(),
+        messageType: 'text'
+      } as ChatMessage]);
+      
+      // Store current prompt before clearing
+      const currentPrompt = userPrompt;
+      
+      // Clear the input after submission
+      setUserPrompt('');
+      
       // Make actual API call with user's temporary ID
       const response = await fetch('/api/generate', {
         method: 'POST',
@@ -529,15 +587,17 @@ export default function Home() {
         },
         body: JSON.stringify({
           imageUrl: uploadedImages[0],
-          prompt: userPrompt,
-          userId: user?.id,
+          prompt: currentPrompt,
+          userId: user?.id || (localStorage.getItem('dekave_temp_user') ? 
+            JSON.parse(localStorage.getItem('dekave_temp_user') || '{}').id : 'temp_user'),
           isHDQuality,
           resetConversation: false
         }),
       });
       
       if (!response.ok) {
-        throw new Error('Failed to generate content');
+        const errorData = await response.json().catch(() => ({ error: 'Failed to generate content' }));
+        throw new Error(errorData.error || 'Failed to generate content');
       }
       
       const result = await response.json();
@@ -563,7 +623,7 @@ export default function Home() {
         }]);
       }
       
-      // Refresh token count to show updated values
+      // Refresh token count to show updated values from backend
       await refreshTokenCount();
     } catch (error) {
       console.error('Error generating content:', error);
@@ -582,7 +642,7 @@ export default function Home() {
   // Replace token purchase with token refresh info
   const handleTokenRefreshInfo = () => {
     // Show info about token refresh
-    alert("Tokens refresh daily! You have " + tokens + " tokens remaining today.");
+    alert("Tokens refresh daily! You have " + localTokens + " tokens remaining today.");
   };
   
   const startNewChat = () => {
@@ -694,11 +754,11 @@ export default function Home() {
           {user && (
             <button 
               onClick={handleTokenRefreshInfo}
-              className={`text-sm bg-zinc-800/50 backdrop-blur-sm rounded-full px-3 py-1.5 hover:bg-zinc-700/50 transition-colors flex items-center ${tokens < 10000 ? 'text-amber-400' : 'text-zinc-300'}`}
+              className={`text-sm bg-zinc-800/50 backdrop-blur-sm rounded-full px-3 py-1.5 hover:bg-zinc-700/80 transition-colors flex items-center ${localTokens < 10000 ? 'text-amber-400' : 'text-zinc-300'} ${windowWidth < 768 ? 'md:block hidden' : ''}`}
             >
-              <span className="font-medium">{tokens.toLocaleString()}</span>
+              <span className="font-medium">{localTokens.toLocaleString()}</span>
               <span className="ml-1">tokens</span>
-              {tokens < 10000 && (
+              {localTokens < 10000 && (
                 <span className="ml-1.5 text-amber-400">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                     <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
@@ -716,6 +776,31 @@ export default function Home() {
           </Link>
         </div>
       </motion.div>
+      
+      {/* Mobile tokens display below top toolbar */}
+      {user && windowWidth < 768 && (
+        <motion.div 
+          className="flex justify-center items-center mb-2 z-10"
+          initial={{ opacity: 0, y: -5 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.2 }}
+        >
+          <div 
+            onClick={handleTokenRefreshInfo}
+            className={`text-sm bg-zinc-800/50 backdrop-blur-sm rounded-full px-3 py-1 ${localTokens < 10000 ? 'text-amber-400' : 'text-zinc-300'} flex items-center`}
+          >
+            <span className="font-medium">{localTokens.toLocaleString()}</span>
+            <span className="ml-1">tokens</span>
+            {localTokens < 10000 && (
+              <span className="ml-1.5 text-amber-400">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                </svg>
+              </span>
+            )}
+          </div>
+        </motion.div>
+      )}
       
       {/* Main chat area */}
       <div className="flex-1 flex flex-col overflow-y-auto px-4 py-6 relative z-10">
