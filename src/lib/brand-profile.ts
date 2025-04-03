@@ -23,51 +23,85 @@ const BRAND_PROFILE_PROMPT = `Analyze this brand image and extract key brand ele
 
 async function blobUrlToBase64(blobUrl: string): Promise<string> {
   try {
+    // Check if it's a blob URL
+    if (!blobUrl.startsWith('blob:')) {
+      console.log('Not a blob URL, returning as is:', blobUrl.substring(0, 30) + '...');
+      return blobUrl;
+    }
+    
+    console.log('Converting blob URL to base64:', blobUrl.substring(0, 30) + '...');
+    
+    // Try to fetch the blob
     const response = await fetch(blobUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch blob: ${response.status} ${response.statusText}`);
+    }
+    
     const blob = await response.blob();
+    
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => {
-        const base64String = reader.result as string;
-        resolve(base64String); // Keep the full data URL
+        if (typeof reader.result === 'string') {
+          console.log('Successfully converted blob to base64 data URL');
+          resolve(reader.result);
+        } else {
+          reject(new Error('FileReader did not return a string'));
+        }
       };
-      reader.onerror = reject;
+      reader.onerror = (err) => {
+        console.error('FileReader error:', err);
+        reject(new Error('FileReader error: ' + (err.target as any)?.error?.message || 'Unknown error'));
+      };
       reader.readAsDataURL(blob);
     });
   } catch (error) {
     console.error('Error converting blob to base64:', error);
-    throw error;
+    throw new Error(`Failed to convert image URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
 export async function extractBrandProfile(imageUrl: string) {
   try {
-    // Convert blob URL to base64
-    const base64Image = await blobUrlToBase64(imageUrl);
+    console.log('Starting brand profile extraction for image URL:', imageUrl.substring(0, 30) + '...');
     
+    // Convert URL to base64 data URL
+    let processedImageUrl;
+    try {
+      processedImageUrl = await blobUrlToBase64(imageUrl);
+    } catch (conversionError) {
+      console.error('Error converting image:', conversionError);
+      throw new Error(`Failed to process image: ${conversionError instanceof Error ? conversionError.message : 'Unknown error'}`);
+    }
+    
+    // Make API request to analyze brand
+    console.log('Sending image for analysis...');
     const response = await fetch('/api/analyze-brand', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        imageUrl: base64Image,
+        imageUrl: processedImageUrl,
         prompt: BRAND_PROFILE_PROMPT
       }),
     });
 
     if (!response.ok) {
-      throw new Error('Failed to analyze brand');
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to analyze brand: ${response.status} ${errorText}`);
     }
 
     const result = await response.json();
+    console.log('Brand analysis complete');
+    
     return {
       ...result,
       timestamp: new Date().toISOString(),
     };
   } catch (error) {
     console.error('Error extracting brand profile:', error);
-    return null;
+    throw new Error(`Error analyzing brand profile: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
