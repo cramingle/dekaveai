@@ -41,10 +41,28 @@ export async function POST(req: NextRequest) {
     const data = await req.json();
     const { imageUrl, prompt, userId, resetConversation, templateName, isHDQuality } = data;
     
+    // Validate required inputs
+    if (!imageUrl) {
+      console.error('Missing imageUrl in request');
+      return NextResponse.json(
+        { error: 'Image URL is required' },
+        { status: 400 }
+      );
+    }
+    
+    if (!prompt) {
+      console.error('Missing prompt in request');
+      return NextResponse.json(
+        { error: 'Prompt is required' },
+        { status: 400 }
+      );
+    }
+    
     let currentTokens = 100000; // Default high token count for free mode
     
     // Check if we have a valid userId (temporary or real)
     if (!userId) {
+      console.error('Missing userId in request');
       return NextResponse.json(
         { error: 'User ID is required' },
         { status: 400 }
@@ -56,77 +74,60 @@ export async function POST(req: NextRequest) {
     
     console.log(`Processing request for user ${userId} with token cost ${tokenCost}`);
     
-    /* Commented out authentication check and token validation from database
-    // Validate user existence and token count
-    const { data: userData, error } = await supabase
-      .from('users')
-      .select('tokens')
-      .eq('id', userId)
-      .single();
+    // For tracking purposes, decrement tokens from browser localStorage
+    // But we'll never actually reject based on token count
     
-    if (error) {
-      console.error('Error fetching user data:', error);
+    try {
+      // Load previous conversation context if needed
+      if (!resetConversation) {
+        // Get the conversation but we don't need to store it in a variable
+        // since processRequest will handle the conversation state internally using userId
+        await getUserConversation(userId);
+      }
+      
+      // Process the request with user ID to maintain conversation context
+      const result = await processRequest(
+        imageUrl,
+        prompt,
+        templateName || 'sportsDrink', // Default template if none provided
+        [], // No reference URLs for now
+        isHDQuality || false,
+        userId // Pass userId to maintain conversation context
+      );
+      
+      // Save the updated conversation context
+      if (result.conversationSummary) {
+        await saveUserConversation(userId, result.conversationSummary);
+      }
+      
+      // Track successful generation for analytics
+      trackAdGeneration(userId, Boolean(isHDQuality), result.costData);
+      
+      // Return the generated ad
+      return NextResponse.json({
+        adDescription: result.adDescription,
+        adImageUrl: result.adImageUrl,
+        tokenUsage: {
+          imageAnalysis: result.costData.imageAnalysisTokens,
+          promptGeneration: result.costData.promptGenerationTokens,
+          totalCost: result.costData.totalCostUSD
+        },
+        tokensLeft: currentTokens - tokenCost, // Return updated token count for client-side tracking
+        tokensUsed: tokenCost,
+        hasConversationContext: !!result.conversationSummary
+      });
+    } catch (processingError) {
+      console.error('Error processing generation request:', processingError);
       return NextResponse.json(
-        { error: 'Error fetching user data' },
+        { error: processingError instanceof Error ? processingError.message : 'Failed to process generation request' },
         { status: 500 }
       );
     }
     
-    const currentTokens = userData?.tokens || 0;
-    */
-    
-    // For tracking purposes, decrement tokens from browser localStorage
-    // But we'll never actually reject based on token count
-    
-    // Load previous conversation context if needed
-    if (!resetConversation) {
-      // Get the conversation but we don't need to store it in a variable
-      // since processRequest will handle the conversation state internally using userId
-      await getUserConversation(userId);
-    }
-    
-    // Process the request with user ID to maintain conversation context
-    const result = await processRequest(
-      imageUrl,
-      prompt,
-      templateName || 'sportsDrink', // Default template if none provided
-      [], // No reference URLs for now
-      isHDQuality || false,
-      userId // Pass userId to maintain conversation context
-    );
-    
-    // Save the updated conversation context
-    if (result.conversationSummary) {
-      await saveUserConversation(userId, result.conversationSummary);
-    }
-    
-    // Track successful generation for analytics
-    trackAdGeneration(userId, Boolean(isHDQuality), result.costData);
-    
-    /* Commented out updating user tokens in database
-    // Update user tokens after successful generation
-    const newTokenCount = currentTokens - tokenCost;
-    await updateUserTokens(userId, newTokenCount);
-    */
-    
-    // Return the generated ad
-    return NextResponse.json({
-      adDescription: result.adDescription,
-      adImageUrl: result.adImageUrl,
-      tokenUsage: {
-        imageAnalysis: result.costData.imageAnalysisTokens,
-        promptGeneration: result.costData.promptGenerationTokens,
-        totalCost: result.costData.totalCostUSD
-      },
-      tokensLeft: currentTokens - tokenCost, // Return updated token count for client-side tracking
-      tokensUsed: tokenCost,
-      hasConversationContext: !!result.conversationSummary
-    });
-    
   } catch (error) {
-    console.error('Error generating content:', error);
+    console.error('Error in generate API route:', error);
     return NextResponse.json(
-      { error: 'Failed to generate content' },
+      { error: 'Failed to process request. Please check your inputs and try again.' },
       { status: 500 }
     );
   }
