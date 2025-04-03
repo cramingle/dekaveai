@@ -139,35 +139,68 @@ export default function Home() {
   // Create a more stable ref for the file input
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Ensure file input exists
+  // Initialize and sync local tokens with auth tokens
   useEffect(() => {
-    // This effect should run once after handleImageUpload is defined
+    setLocalTokens(tokens);
+  }, [tokens]);
+  
+  // Use a ref to store the handleImageUpload function
+  const handleImageUploadRef = useRef<any>(null);
+  
+  // Add the file input setup effect right here, in the same position as before
+  useEffect(() => {
+    console.log('Setting up file input element');
+    // Create file input if it doesn't exist
     if (!fileInputRef.current) {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/*';
       input.multiple = true;
       input.style.display = 'none';
-      input.addEventListener('change', handleImageUpload as any);
+      
+      // Add to DOM now, add event listener later
       document.body.appendChild(input);
       
       // Store reference
       fileInputRef.current = input;
       
-      // Cleanup function
+      // Return cleanup function
       return () => {
         if (fileInputRef.current) {
-          fileInputRef.current.removeEventListener('change', handleImageUpload as any);
-          document.body.removeChild(fileInputRef.current);
+          // Only cleanup if it's still in the DOM
+          try {
+            document.body.removeChild(fileInputRef.current);
+          } catch (e) {
+            console.error('Error removing file input:', e);
+          }
         }
       };
     }
-  }, []);  // We'll leave dependency array empty and use a separate solution
+    
+    return undefined; // Return undefined if no cleanup is needed
+  }, []); // Empty dependency array
   
-  // Initialize and sync local tokens with auth tokens
+  // Attach the event handler after it's defined
   useEffect(() => {
-    setLocalTokens(tokens);
-  }, [tokens]);
+    // Skip if no fileInput or no handler
+    if (!fileInputRef.current || !handleImageUploadRef.current) return;
+    
+    const handleChange = (e: Event) => {
+      if (handleImageUploadRef.current) {
+        handleImageUploadRef.current(e);
+      }
+    };
+    
+    // Add event listener
+    fileInputRef.current.addEventListener('change', handleChange);
+    
+    // Return cleanup function
+    return () => {
+      if (fileInputRef.current) {
+        fileInputRef.current.removeEventListener('change', handleChange);
+      }
+    };
+  }, [handleImageUploadRef.current]); // Depend on the handler ref
   
   // Log temporary user state for debugging
   useEffect(() => {
@@ -177,8 +210,6 @@ export default function Home() {
       tokens, 
       isLoading 
     });
-    
-    // No need to check localStorage for cached auth as we use temporary user system
   }, [isAuthenticated, user, tokens, isLoading]);
 
   // Listen for state restoration events
@@ -562,6 +593,9 @@ export default function Home() {
       setIsGenerating(false);
     }
   };
+  
+  // Store the function in a ref so we can access it in useEffect
+  handleImageUploadRef.current = handleImageUpload;
   
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
