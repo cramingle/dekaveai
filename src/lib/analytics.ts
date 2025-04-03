@@ -112,11 +112,13 @@ export function trackAdGeneration(userId: string, isHDQuality: boolean, costData
 }
 
 // Track ad generation errors
-export function trackAdGenerationError(userId: string, error: string) {
-  trackEvent(EventType.ERROR, {
+export function trackAdGenerationError(userId: string, isHD: boolean, errorMessage?: string) {
+  // Track failed ad generation
+  trackEvent(EventType.AD_GENERATION_ERROR, {
     userId,
-    error,
-    timestamp: new Date().toISOString()
+    quality: isHD ? 'HD' : 'Standard',
+    timestamp: new Date().toISOString(),
+    error: errorMessage || 'Unknown error'
   });
 }
 
