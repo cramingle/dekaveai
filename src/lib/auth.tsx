@@ -64,6 +64,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Keep loading state true while processing auth code
         if (hasAuthCode) {
           setIsLoading(true);
+          
+          // Get the code from the URL
+          const code = params.get('code');
+          
+          // Exchange the code for a session
+          if (code) {
+            console.log('Exchanging auth code for session');
+            const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+            
+            if (error) {
+              console.error('Error exchanging code for session:', error);
+              setIsLoading(false);
+              return;
+            }
+            
+            console.log('Session established successfully:', !!data.session);
+          }
         }
 
         // Get current session
@@ -139,59 +156,128 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, session: Session | null) => {
+        console.log('Auth state changed:', event);
+        
         if (event === 'SIGNED_IN' && session?.user) {
-          // Get user data from database
-          const { data: userData } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
+          console.log('User signed in:', session.user.id);
+          
+          try {
+            // Get user data from database
+            const { data: userData, error } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', session.user.id)
+              .single();
 
-          if (userData) {
-            const userState = {
-              id: session.user.id,
-              email: session.user.email!,
-              tokens: userData.tokens || 0,
-              tier: userData.tier || 'Pioneer',
-              tokens_expiry_date: userData.tokens_expiry_date,
-              hasLoggedInBefore: ((userData.tokens ?? 0) > 0 || !!userData.tokens_expiry_date),
-              hasStoredConversation: !!userData.conversation_last_used,
-              conversationLastUsed: userData.conversation_last_used,
-              token: session.access_token,
-              stripeCustomerId: userData.stripe_customer_id
-            };
-            
-            setUser(userState);
-            setTokens(userData.tokens || 0);
-            setTokensExpiryDate(userData.tokens_expiry_date);
-            setTier(userData.tier || 'Pioneer');
-            setIsAuthenticated(true);
+            if (error) {
+              console.error('Error fetching user data after sign in:', error);
+              return;
+            }
 
-            // Restore saved state if exists
-            const savedState = sessionStorage.getItem('userState');
-            console.log('Saved state found:', savedState); // Debug log
-            
-            if (savedState) {
+            if (userData) {
+              const userState = {
+                id: session.user.id,
+                email: session.user.email!,
+                tokens: userData.tokens || 0,
+                tier: userData.tier || 'Pioneer',
+                tokens_expiry_date: userData.tokens_expiry_date,
+                hasLoggedInBefore: ((userData.tokens ?? 0) > 0 || !!userData.tokens_expiry_date),
+                hasStoredConversation: !!userData.conversation_last_used,
+                conversationLastUsed: userData.conversation_last_used,
+                token: session.access_token,
+                stripeCustomerId: userData.stripe_customer_id
+              };
+              
+              setUser(userState);
+              setTokens(userData.tokens || 0);
+              setTokensExpiryDate(userData.tokens_expiry_date);
+              setTier(userData.tier || 'Pioneer');
+              setIsAuthenticated(true);
+
+              // Restore saved state if exists
+              const savedState = sessionStorage.getItem('userState');
+              console.log('Saved state found:', savedState);
+              
+              if (savedState) {
+                try {
+                  const state = JSON.parse(savedState);
+                  console.log('Parsed state:', state); // Debug log
+                  
+                  // Dispatch event with the restored state
+                  window.dispatchEvent(new CustomEvent('authStateRestored', { 
+                    detail: {
+                      uploadedImages: state.uploadedImages || [],
+                      chatHistory: state.chatHistory || [],
+                      brandProfileAnalyzed: state.brandProfileAnalyzed || false,
+                      userPrompt: state.userPrompt || ''
+                    }
+                  }));
+                  
+                  // Clear the saved state
+                  sessionStorage.removeItem('userState');
+                } catch (error) {
+                  console.error('Error parsing saved state:', error);
+                }
+              }
+            } else {
+              console.error('No user data found in database for user:', session.user.id);
+              
+              // Create user data if it doesn't exist
               try {
-                const state = JSON.parse(savedState);
-                console.log('Parsed state:', state); // Debug log
-                
-                // Dispatch event with the restored state
-                window.dispatchEvent(new CustomEvent('authStateRestored', { 
-                  detail: {
-                    uploadedImages: state.uploadedImages || [],
-                    chatHistory: state.chatHistory || [],
-                    brandProfileAnalyzed: state.brandProfileAnalyzed || false,
-                    userPrompt: state.userPrompt || ''
+                console.log('Creating new user data for:', session.user.id);
+                const { error: insertError } = await supabase
+                  .from('users')
+                  .insert({
+                    id: session.user.id,
+                    email: session.user.email,
+                    tokens: 0,
+                    tier: 'Pioneer',
+                    created_at: new Date().toISOString()
+                  });
+                  
+                if (insertError) {
+                  console.error('Error creating user data:', insertError);
+                } else {
+                  // Set user state with default values
+                  const userState = {
+                    id: session.user.id,
+                    email: session.user.email!,
+                    tokens: 0,
+                    tier: 'Pioneer' as 'Pioneer',
+                    hasLoggedInBefore: false,
+                    token: session.access_token,
+                  };
+                  
+                  setUser(userState);
+                  setTokens(0);
+                  setTier('Pioneer');
+                  setIsAuthenticated(true);
+                  
+                  // Restore saved state if exists (same as above)
+                  const savedState = sessionStorage.getItem('userState');
+                  if (savedState) {
+                    try {
+                      const state = JSON.parse(savedState);
+                      window.dispatchEvent(new CustomEvent('authStateRestored', { 
+                        detail: {
+                          uploadedImages: state.uploadedImages || [],
+                          chatHistory: state.chatHistory || [],
+                          brandProfileAnalyzed: state.brandProfileAnalyzed || false,
+                          userPrompt: state.userPrompt || ''
+                        }
+                      }));
+                      sessionStorage.removeItem('userState');
+                    } catch (error) {
+                      console.error('Error parsing saved state:', error);
+                    }
                   }
-                }));
-                
-                // Clear the saved state
-                sessionStorage.removeItem('userState');
+                }
               } catch (error) {
-                console.error('Error parsing saved state:', error);
+                console.error('Error in user creation process:', error);
               }
             }
+          } catch (error) {
+            console.error('Error in onAuthStateChange handler:', error);
           }
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
