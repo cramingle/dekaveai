@@ -216,6 +216,41 @@ export default function Home() {
     };
   }, [isAuthenticated, user]); // Only depend on auth state
 
+  // Handle window resizing - make sure this is always called
+  useEffect(() => {
+    // Set initial width
+    setWindowWidth(window.innerWidth);
+    
+    // Add resize listener
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+  
+  // Show token purchase modal - make sure this is always called, not conditionally rendered
+  useEffect(() => {
+    // Only execute this logic in browser environment
+    if (typeof window === 'undefined') return;
+    
+    // Check for URL parameter (for manual token purchase)
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('showTokenTopup') === 'true' && user) {
+      setShowTokenTopup(true);
+      
+      // Clean the URL to remove the parameter (to avoid showing the modal again on refresh)
+      const url = new URL(window.location.href);
+      url.searchParams.delete('showTokenTopup');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [user]);
+  
   // Show a full-screen loading state until authentication is resolved
   if (isLoading) {
     return (
@@ -263,41 +298,6 @@ export default function Home() {
     
     return true;
   };
-
-  // Handle window resizing
-  useEffect(() => {
-    // Set initial width
-    setWindowWidth(window.innerWidth);
-    
-    // Add resize listener
-    const handleResize = () => {
-      setWindowWidth(window.innerWidth);
-    };
-    
-    window.addEventListener('resize', handleResize);
-    
-    // Cleanup
-    return () => {
-      window.removeEventListener('resize', handleResize);
-    };
-  }, []);
-  
-  // Show token purchase modal only for authenticated users who have had tokens before
-  // but now have 0 tokens (tokens expired), not for new users
-  useEffect(() => {
-    // Check for URL parameter (for manual token purchase)
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('showTokenTopup') === 'true' && user) {
-        setShowTokenTopup(true);
-        
-        // Clean the URL to remove the parameter (to avoid showing the modal again on refresh)
-        const url = new URL(window.location.href);
-        url.searchParams.delete('showTokenTopup');
-        window.history.replaceState({}, '', url.toString());
-      }
-    }
-  }, [user]);
   
   // Token utility functions
   
