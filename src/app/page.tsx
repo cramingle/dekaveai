@@ -151,6 +151,8 @@ export default function Home() {
     // Create a reference we can use to track component mounted state
     let mounted = true;
     
+    console.log('Setting up state restoration listener');
+    
     // Create the event handler
     const handleStateRestoration = (event: CustomEvent<AppState>) => {
       // Check if component is still mounted
@@ -160,7 +162,7 @@ export default function Home() {
       }
       
       try {
-        console.log('Handling state restoration event:', event.detail);
+        console.log('Handling state restoration event with detail:', event.detail);
         const state = event.detail;
         
         if (!state) {
@@ -168,39 +170,76 @@ export default function Home() {
           return;
         }
 
-        // Batch all state updates in a setTimeout to avoid React errors
+        // Log what we're restoring
+        const keys = Object.keys(state);
+        console.log(`Restoring state with keys: ${keys.join(', ')}`);
+        
+        if (state.uploadedImages?.length) {
+          console.log(`Restoring ${state.uploadedImages.length} uploaded images`);
+        }
+        
+        if (state.chatHistory?.length) {
+          console.log(`Restoring ${state.chatHistory.length} chat messages`);
+        }
+        
+        // Batch all state updates to avoid React errors
         setTimeout(() => {
           if (!mounted) return;
           
-          // Apply all updates within a single batch to prevent partial state issues
+          // Apply all updates in a specific order to ensure proper UI state
           try {
-            // Apply state updates in a fixed order
-            if (state.chatStarted !== undefined) setChatStarted(state.chatStarted);
-            if (state.isLoadingResponse !== undefined) setIsLoadingResponse(state.isLoadingResponse);
-            if (state.uploadedImages) setUploadedImages(state.uploadedImages || []);
-            if (state.brandProfileAnalyzed !== undefined) setBrandProfileAnalyzed(!!state.brandProfileAnalyzed);
-            if (state.userPrompt !== undefined) setUserPrompt(state.userPrompt || '');
+            // First restore uploaded images
+            if (state.uploadedImages?.length) {
+              setUploadedImages(state.uploadedImages);
+            }
             
-            // Complex state that might need merging
-            if (state.chatHistory) {
+            // Then restore specific state flags
+            if (state.brandProfileAnalyzed !== undefined) {
+              setBrandProfileAnalyzed(!!state.brandProfileAnalyzed);
+            }
+            
+            // Then restore chat history
+            if (state.chatHistory?.length) {
               setChatHistory(prevHistory => {
-                const currentHistory = [...prevHistory];
-                const existingIds = new Set(currentHistory.map(msg => msg.id));
-                const newMessages = (state.chatHistory || []).filter(msg => !existingIds.has(msg.id));
-                
-                if (newMessages.length === 0) return currentHistory;
-                return [...currentHistory, ...newMessages];
+                if (prevHistory.length > 0) {
+                  // Only add messages that don't already exist
+                  const existingIds = new Set(prevHistory.map(msg => msg.id));
+                  const newMessages = state.chatHistory!.filter(msg => !existingIds.has(msg.id));
+                  
+                  if (newMessages.length === 0) {
+                    console.log('No new messages to add to existing chat history');
+                    return prevHistory;
+                  }
+                  
+                  console.log(`Adding ${newMessages.length} messages to existing chat history`);
+                  return [...prevHistory, ...newMessages];
+                } else {
+                  // If no existing history, just use the new one
+                  console.log(`Setting complete chat history with ${state.chatHistory!.length} messages`);
+                  return state.chatHistory!;
+                }
               });
             }
             
-            // Final update - always set this regardless of state
+            // Then set other values
+            if (state.userPrompt) setUserPrompt(state.userPrompt);
+            if (state.chatStarted !== undefined) setChatStarted(state.chatStarted);
+            if (state.isLoadingResponse !== undefined) setIsLoadingResponse(state.isLoadingResponse);
+            
+            // Ensure UI is fully restored
             setShowPaywall(false);
             
             console.log('State restoration complete');
+            
+            // Set chat started if we have uploads but it wasn't explicitly set
+            if (state.uploadedImages?.length && state.chatStarted === undefined) {
+              console.log('Setting chat as started based on uploaded images');
+              setChatStarted(true);
+            }
           } catch (err) {
             console.error('Error applying state updates:', err);
           }
-        }, 0);
+        }, 100);
       } catch (error) {
         console.error('Error handling state restoration:', error);
       }
@@ -208,11 +247,37 @@ export default function Home() {
 
     // Add event listener for state restoration
     window.addEventListener('restoreState', handleStateRestoration as EventListener);
+    
+    // Listen for auth changes to potentially trigger UI updates
+    const handleAuthChange = () => {
+      if (!mounted) return;
+      console.log('Auth state changed, checking if we need to update UI');
+      
+      // Check if we need to restore any saved state
+      const savedState = sessionStorage.getItem('userState');
+      if (savedState) {
+        try {
+          const state = JSON.parse(savedState);
+          console.log('Found saved state in session storage:', state);
+          // Let the app know we have state to restore
+          if (state.uploadedImages?.length || state.chatHistory?.length) {
+            console.log('Saved state contains uploaded images or chat history, setting chatStarted');
+            setChatStarted(true);
+          }
+        } catch (error) {
+          console.error('Error parsing saved state:', error);
+        }
+      }
+    };
+    
+    // Listen for auth state changes
+    window.addEventListener('authStateChanged', handleAuthChange as EventListener);
 
-    // Clean up the event listener
+    // Clean up the event listeners
     return () => {
       mounted = false;
       window.removeEventListener('restoreState', handleStateRestoration as EventListener);
+      window.removeEventListener('authStateChanged', handleAuthChange as EventListener);
     };
   }, [isAuthenticated, user]); // Only depend on auth state
 
@@ -265,20 +330,37 @@ export default function Home() {
   
   // Save state before showing paywall
   const saveStateAndShowPaywall = () => {
-    // Create a stable copy of the current state
+    // Create a stable copy of the current state with all relevant data
     const currentState = {
       uploadedImages,
       chatHistory,
       brandProfileAnalyzed,
       userPrompt,
       chatStarted: !!uploadedImages.length || chatHistory.length > 0,
-      isLoadingResponse: false
+      isLoadingResponse: false,
+      systemMessages,
+      editingContext: {
+        isEditing: false,
+        targetMessageId: null,
+        originalImage: null,
+        originalPrompt: null
+      }
     };
     
     // Save in a try-catch to handle potential serialization errors
     try {
-      console.log('Saving state before auth:', currentState);
+      console.log('Saving complete state before auth:', currentState);
       sessionStorage.setItem('userState', JSON.stringify(currentState));
+      
+      // Also save in localStorage as backup in case sessionStorage is cleared
+      try {
+        localStorage.setItem('dekave_state_backup', JSON.stringify({
+          timestamp: Date.now(),
+          hasState: true
+        }));
+      } catch (err) {
+        console.error('Error saving state backup marker:', err);
+      }
     } catch (error) {
       console.error('Error saving state:', error);
     }

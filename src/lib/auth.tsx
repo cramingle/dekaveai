@@ -66,7 +66,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Create a stable copy of the state - prevent reference issues
       const stableCopy = JSON.parse(JSON.stringify(state));
       
-      // Use a more reliable approach for dispatching events
+      // Ensure certain critical fields are set
+      if (stableCopy.chatHistory === undefined) stableCopy.chatHistory = [];
+      if (stableCopy.uploadedImages === undefined) stableCopy.uploadedImages = [];
+      if (stableCopy.chatStarted === undefined) stableCopy.chatStarted = !!stableCopy.uploadedImages.length;
+      
+      // Dispatch the event after a slight delay to ensure React has settled
       setTimeout(() => {
         try {
           const event = new CustomEvent('restoreState', { 
@@ -76,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
           
           window.dispatchEvent(event);
+          console.log('State restoration event dispatched successfully');
           
           // Clean up the saved state to prevent duplicate restoration
           setTimeout(() => {
@@ -89,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch (error) {
           console.error('Error dispatching state restoration event:', error);
         }
-      }, 50); // Small delay to ensure React has completed rendering
+      }, 250); // Increased delay to ensure components are fully rendered
     } catch (error) {
       console.error('Failed to create state restoration event:', error);
     }
@@ -116,13 +122,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Initialize auth state
   useEffect(() => {
     let isMounted = true;
+    let authStateChanged = false;
     
     // Clean the URL immediately when component mounts to avoid issues with reprocessing
     cleanUrlAfterAuth();
     
     // Safety timeout to ensure loading state isn't stuck
     const safetyTimeout = setTimeout(() => {
-      if (isMounted && isLoading) {
+      if (isMounted && isLoading && !authStateChanged) {
         console.warn('Safety timeout triggered - forcing isLoading to false');
         setIsLoading(false);
       }
@@ -153,6 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
             
             console.log('Session established successfully:', !!data.session);
+            authStateChanged = true;
             
             // Clean up the URL to prevent reprocessing on page refresh
             try {
@@ -195,6 +203,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // Critical: Ensure loading state is set to false after auth code exchange
                 setIsLoading(false);
                 
+                // Store user in localStorage to help with persistence
+                localStorage.setItem('dekave_user', JSON.stringify({
+                  id: data.session.user.id,
+                  email: data.session.user.email,
+                  isAuthenticated: true
+                }));
+                
+                // Notify components about auth state change
+                notifyAuthStateChanged();
+                
                 // If we had an auth code, restore saved state
                 if (hasAuthCode) {
                   const savedState = sessionStorage.getItem('userState');
@@ -203,13 +221,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     try {
                       const state = JSON.parse(savedState);
                       
-                      // Use requestAnimationFrame to ensure DOM is updated
-                      requestAnimationFrame(() => {
-                        // Then use setTimeout to ensure React has processed state updates
-                        setTimeout(() => {
-                          if (isMounted) dispatchStateRestorationEvent(state);
-                        }, 100);
-                      });
+                      // Use a simpler approach to dispatch state restoration
+                      setTimeout(() => {
+                        if (isMounted) dispatchStateRestorationEvent(state);
+                      }, 250);
                     } catch (error) {
                       console.error('Error parsing saved state after redirect:', error);
                     }
@@ -240,6 +255,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   });
                   setTokens(0);
                   setTier('Pioneer');
+                  setIsAuthenticated(true);
+                  
+                  // Store user in localStorage to help with persistence
+                  localStorage.setItem('dekave_user', JSON.stringify({
+                    id: data.session.user.id,
+                    email: data.session.user.email,
+                    isAuthenticated: true
+                  }));
+                  
+                  // Notify components about auth state change
+                  notifyAuthStateChanged();
                   
                   // Critical: Ensure loading state is set to false after creating new user
                   setIsLoading(false);
@@ -263,6 +289,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data: { session } } = await supabase.auth.getSession();
         
         if (session?.user && isMounted) {
+          // Set flag to indicate auth state has changed
+          authStateChanged = true;
+          
           // Get user data from database
           const { data: userData } = await supabase
             .from('users')
@@ -287,6 +316,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setTokensExpiryDate(userData.tokens_expiry_date);
             setTier(userData.tier || 'Pioneer');
             setIsAuthenticated(true);
+            
+            // Store user in localStorage to help with persistence
+            localStorage.setItem('dekave_user', JSON.stringify({
+              id: session.user.id,
+              email: session.user.email,
+              isAuthenticated: true
+            }));
+            
+            // Notify components about auth state change
+            notifyAuthStateChanged();
+          }
+        } else {
+          // If we have cached user data in localStorage but no session, try to recover
+          try {
+            const cachedUser = localStorage.getItem('dekave_user');
+            if (cachedUser && !isAuthenticated) {
+              const parsedUser = JSON.parse(cachedUser);
+              // If we have cached data but no session, we need to clear it
+              localStorage.removeItem('dekave_user');
+            }
+          } catch (e) {
+            console.error('Error checking cached user:', e);
           }
         }
         
@@ -305,6 +356,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, session: Session | null) => {
         console.log('Auth state changed:', event);
+        
+        // Mark that auth state has changed to prevent safety timeout from triggering
+        authStateChanged = true;
         
         if (event === 'SIGNED_IN' && session?.user) {
           console.log('User signed in:', session.user.id);
@@ -357,16 +411,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   setIsAuthenticated(true);
                   setIsLoading(false);
                   
+                  // Store user in localStorage to help with persistence
+                  localStorage.setItem('dekave_user', JSON.stringify({
+                    id: session.user.id,
+                    email: session.user.email,
+                    isAuthenticated: true
+                  }));
+                  
+                  // Notify components about auth state change
+                  notifyAuthStateChanged();
+                  
                   // Restore saved state if exists
                   const savedState = sessionStorage.getItem('userState');
                   if (savedState) {
                     try {
                       const state = JSON.parse(savedState);
-                      requestAnimationFrame(() => {
-                        setTimeout(() => {
-                          if (isMounted) dispatchStateRestorationEvent(state);
-                        }, 100);
-                      });
+                      setTimeout(() => {
+                        if (isMounted) dispatchStateRestorationEvent(state);
+                      }, 250);
                     } catch (error) {
                       console.error('Error parsing saved state:', error);
                     }
@@ -401,17 +463,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setTier(userData.tier || 'Pioneer');
               setIsAuthenticated(true);
               setIsLoading(false);
-
+              
+              // Store user in localStorage to help with persistence
+              localStorage.setItem('dekave_user', JSON.stringify({
+                id: session.user.id,
+                email: session.user.email,
+                isAuthenticated: true
+              }));
+              
+              // Notify components about auth state change
+              notifyAuthStateChanged();
+              
               // Restore saved state if exists
               const savedState = sessionStorage.getItem('userState');
               if (savedState) {
                 try {
                   const state = JSON.parse(savedState);
-                  requestAnimationFrame(() => {
-                    setTimeout(() => {
-                      if (isMounted) dispatchStateRestorationEvent(state);
-                    }, 100);
-                  });
+                  setTimeout(() => {
+                    if (isMounted) dispatchStateRestorationEvent(state);
+                  }, 250);
                 } catch (error) {
                   console.error('Error parsing saved state:', error);
                 }
@@ -428,6 +498,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setTier('Pioneer');
           setIsAuthenticated(false);
           setIsLoading(false);
+          
+          // Clear user from localStorage
+          localStorage.removeItem('dekave_user');
+          
+          // Notify components about auth state change
+          notifyAuthStateChanged();
         }
       }
     );
@@ -556,6 +632,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const tokensExpired = () => {
     if (!tokensExpiryDate) return false;
     return new Date(tokensExpiryDate) < new Date();
+  };
+
+  // Add this helper function to notify about auth state changes
+  const notifyAuthStateChanged = () => {
+    try {
+      console.log('Notifying components about auth state change');
+      window.dispatchEvent(new CustomEvent('authStateChanged'));
+    } catch (error) {
+      console.error('Error dispatching auth state change event:', error);
+    }
   };
 
   return (
