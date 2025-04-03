@@ -1,0 +1,44 @@
+# This is your Supabase configuration file for local development.
+project_id = "dekave"
+
+[api]
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+
+[studio]
+port = 54323
+
+[inbucket]
+port = 54324
+smtp_port = 54325
+pop3_port = 54326
+
+[auth]
+site_url = "https://dekaveai.vercel.app"
+additional_redirect_urls = ["http://localhost:3000/auth", "https://dekaveai.vercel.app/auth"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+max_frequency = "60s"
+
+[auth.external.google]
+enabled = true
+client_id = env("GOOGLE_CLIENT_ID")
+secret = env("GOOGLE_CLIENT_SECRET")
+
+[analytics]
+enabled = false
+port = 54327
+vector_port = 54328
+gcp_project_id = ""
+gcp_project_number = ""
+gcp_jwt_path = "supabase/gcloud.json"
