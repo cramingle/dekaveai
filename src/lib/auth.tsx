@@ -80,6 +80,94 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
             
             console.log('Session established successfully:', !!data.session);
+            
+            // Immediately set authenticated state if we have a session
+            if (data.session) {
+              console.log('Setting initial authenticated state from code exchange');
+              setIsAuthenticated(true);
+              
+              // Get user data from database
+              const { data: userData } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', data.session.user.id)
+                .single();
+                
+              if (userData) {
+                setUser({
+                  id: data.session.user.id,
+                  email: data.session.user.email!,
+                  tokens: userData.tokens || 0,
+                  tier: userData.tier || 'Pioneer',
+                  tokens_expiry_date: userData.tokens_expiry_date,
+                  hasLoggedInBefore: ((userData.tokens ?? 0) > 0 || !!userData.tokens_expiry_date),
+                  hasStoredConversation: !!userData.conversation_last_used,
+                  conversationLastUsed: userData.conversation_last_used,
+                  token: data.session.access_token,
+                  stripeCustomerId: userData.stripe_customer_id
+                });
+                setTokens(userData.tokens || 0);
+                setTokensExpiryDate(userData.tokens_expiry_date);
+                setTier(userData.tier || 'Pioneer');
+                
+                // Restore saved state here too
+                const savedState = sessionStorage.getItem('userState');
+                console.log('Saved state during code exchange:', savedState);
+                
+                if (savedState) {
+                  try {
+                    const state = JSON.parse(savedState);
+                    console.log('Parsing state during code exchange:', state);
+                    
+                    // Dispatch event with the restored state
+                    window.dispatchEvent(new CustomEvent('authStateRestored', { 
+                      detail: {
+                        uploadedImages: state.uploadedImages || [],
+                        chatHistory: state.chatHistory || [],
+                        brandProfileAnalyzed: state.brandProfileAnalyzed || false,
+                        userPrompt: state.userPrompt || ''
+                      }
+                    }));
+                    
+                    // Clean up the URL and saved state
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('code');
+                    window.history.replaceState({}, '', url.toString());
+                    sessionStorage.removeItem('userState');
+                  } catch (error) {
+                    console.error('Error parsing saved state during code exchange:', error);
+                  }
+                }
+              } else {
+                // Create user if not found
+                try {
+                  console.log('Creating new user during code exchange for:', data.session.user.id);
+                  await supabase
+                    .from('users')
+                    .insert({
+                      id: data.session.user.id,
+                      email: data.session.user.email,
+                      tokens: 0,
+                      tier: 'Pioneer',
+                      created_at: new Date().toISOString()
+                    });
+                  
+                  // Set default user state
+                  setUser({
+                    id: data.session.user.id,
+                    email: data.session.user.email!,
+                    tokens: 0,
+                    tier: 'Pioneer' as 'Pioneer',
+                    hasLoggedInBefore: false,
+                    token: data.session.access_token,
+                  });
+                  setTokens(0);
+                  setTier('Pioneer');
+                } catch (createError) {
+                  console.error('Error creating user during code exchange:', createError);
+                }
+              }
+            }
           }
         }
 

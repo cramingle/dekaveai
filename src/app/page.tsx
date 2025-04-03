@@ -107,6 +107,25 @@ export default function Home() {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Log authentication state for debugging
+  useEffect(() => {
+    console.log('Auth state in Home component:', { 
+      isAuthenticated, 
+      user: user ? `User ${user.id} (${user.email})` : 'No user', 
+      tokens, 
+      isLoading 
+    });
+  }, [isAuthenticated, user, tokens, isLoading]);
+
+  // Show a full-screen loading state until authentication is resolved
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-black via-zinc-900 to-black">
+        <LoadingSpinner variant="small" color="#ffffff" message="Loading..." />
+      </div>
+    );
+  }
+  
   // Restore state from sessionStorage after authentication
   useEffect(() => {
     const handleStateRestoration = (event: CustomEvent<any>) => {
@@ -440,16 +459,6 @@ export default function Home() {
     
     return null;
   }
-
-  // Add debugging logs to track authentication state
-  useEffect(() => {
-    console.log('Auth state in Home component:', { 
-      isAuthenticated, 
-      user: user ? `User ${user.id} (${user.email})` : 'No user', 
-      tokens, 
-      isLoading 
-    });
-  }, [isAuthenticated, user, tokens, isLoading]);
 
   return (
     <div 
