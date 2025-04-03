@@ -671,18 +671,39 @@ export default function Home() {
       
       setIsGenerating(true);
       
-      // If there's a staged image, add it to uploadedImages now
+      // If there's a staged image, add it to the chat history but not to uploadedImages again
       if (stagedImage) {
-        setUploadedImages(prev => [...prev, stagedImage]);
+        // Check if this image is already in uploadedImages to prevent duplication
+        if (!uploadedImages.includes(stagedImage)) {
+          setUploadedImages(prev => [...prev, stagedImage]);
+        }
         
-        // Add staged image to chat history
-        setChatHistory(prev => [...prev, {
-          id: `image-${Date.now()}`,
-          type: 'prompt',
-          content: stagedImage,
-          timestamp: Date.now(),
-          messageType: 'image'
-        } as ChatMessage]);
+        // Generate a unique ID for the message
+        const imageMessageId = `image-${Date.now()}`;
+        
+        // Add staged image to chat history, checking for duplicates
+        setChatHistory(prev => {
+          // Check if this image was already added recently (within last 5 seconds)
+          const recentImageExists = prev.some(msg => 
+            msg.type === 'prompt' && 
+            msg.messageType === 'image' && 
+            msg.content === stagedImage &&
+            Date.now() - msg.timestamp < 5000
+          );
+          
+          if (recentImageExists) {
+            console.log('Skipping duplicate image in chat history');
+            return prev;
+          }
+          
+          return [...prev, {
+            id: imageMessageId,
+            type: 'prompt',
+            content: stagedImage,
+            timestamp: Date.now(),
+            messageType: 'image'
+          } as ChatMessage];
+        });
       }
       
       // Add text prompt to chat history if there is one
