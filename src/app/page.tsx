@@ -434,7 +434,7 @@ export default function Home() {
       {/* Main chat area */}
       <div className="flex-1 flex flex-col overflow-y-auto px-4 py-6 relative z-10">
         <AnimatePresence mode="wait">
-          {!uploadedImages.length && !chatHistory.length && (
+          {!uploadedImages.length && !chatHistory.length ? (
             <motion.div
               key="welcome"
               initial={{ opacity: 0, y: 20 }}
@@ -481,108 +481,115 @@ export default function Home() {
                 </div>
               </div>
             </motion.div>
-          )}
-
-          <div className="w-full max-w-5xl mx-auto flex flex-col">
-            {/* Uploaded Images Grid - Only show when we have uploads */}
-            {uploadedImages.length > 0 && (
-              <motion.div
-                key="image-grid"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.5 }}
-                className="w-full flex justify-end mb-3"
-              >
-                <div className="flex flex-wrap gap-1 justify-end" style={{ 
-                  maxWidth: windowWidth < 640 ? '95%' : '350px',
-                  marginLeft: 'auto'
-                }}>
-                  {uploadedImages.map((image) => (
-                    <motion.div
-                      key={image.id}
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.9 }}
-                      className="relative overflow-hidden border border-white/10 rounded-lg"
-                      style={{ 
-                        width: uploadedImages.length > 2 
-                          ? (windowWidth < 640 ? '50px' : '70px') 
-                          : (windowWidth < 640 ? '70px' : '90px'),
-                        height: uploadedImages.length > 2 
-                          ? (windowWidth < 640 ? '50px' : '70px') 
-                          : (windowWidth < 640 ? '70px' : '90px'),
-                      }}
-                    >
-                      <img src={image.url} alt="Uploaded product" className="w-full h-full object-cover" />
-                      <button 
-                        onClick={() => {
-                          setUploadedImages(prev => prev.filter(img => img.id !== image.id));
+          ) : (
+            <motion.div
+              key="content"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.5 }}
+              className="w-full max-w-5xl mx-auto flex flex-col"
+            >
+              {/* Uploaded Images Grid - Only show when we have uploads */}
+              {uploadedImages.length > 0 && (
+                <motion.div
+                  key="image-grid"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.5 }}
+                  className="w-full flex justify-end mb-3"
+                >
+                  <div className="flex flex-wrap gap-1 justify-end" style={{ 
+                    maxWidth: windowWidth < 640 ? '95%' : '350px',
+                    marginLeft: 'auto'
+                  }}>
+                    {uploadedImages.map((image) => (
+                      <motion.div
+                        key={image.id}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        className="relative overflow-hidden border border-white/10 rounded-lg"
+                        style={{ 
+                          width: uploadedImages.length > 2 
+                            ? (windowWidth < 640 ? '50px' : '70px') 
+                            : (windowWidth < 640 ? '70px' : '90px'),
+                          height: uploadedImages.length > 2 
+                            ? (windowWidth < 640 ? '50px' : '70px') 
+                            : (windowWidth < 640 ? '70px' : '90px'),
                         }}
-                        className="absolute top-1 right-1 bg-black/70 hover:bg-black/90 rounded-full p-0.5 transition-colors"
-                        aria-label="Remove image"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </motion.div>
-                  ))}
+                        <img src={image.url} alt="Uploaded product" className="w-full h-full object-cover" />
+                        <button 
+                          onClick={() => {
+                            setUploadedImages(prev => prev.filter(img => img.id !== image.id));
+                          }}
+                          className="absolute top-1 right-1 bg-black/70 hover:bg-black/90 rounded-full p-0.5 transition-colors"
+                          aria-label="Remove image"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Chat History - Only show when we have chat history */}
+              {chatHistory.length > 0 && (
+                <div className="flex-1 space-y-6 w-full">
+                  <AnimatePresence mode="popLayout">
+                    {chatHistory.map((item) => (
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        transition={{ duration: 0.5 }}
+                        layout
+                      >
+                        {item.type === 'prompt' ? (
+                          <div className="flex justify-end mb-4">
+                            <div className="bg-zinc-800 rounded-2xl rounded-tr-sm px-6 py-4 max-w-[80%]" style={{ 
+                              maxWidth: windowWidth < 640 ? '85%' : '350px' 
+                            }}>
+                              <p className="text-white">{item.content}</p>
+                              {item.tokensUsed && (
+                                <p className="text-zinc-500 text-xs mt-1 text-right">
+                                  {item.tokensUsed} token{item.tokensUsed !== 1 ? 's' : ''} used
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex justify-start mb-4">
+                            <div className="bg-zinc-900/50 backdrop-blur-sm rounded-2xl rounded-tl-sm p-3 max-w-[90%]">
+                              <img src={item.content} alt="Generated result" className="rounded-lg max-h-[450px] w-auto" />
+                            </div>
+                          </div>
+                        )}
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                 </div>
-              </motion.div>
-            )}
+              )}
 
-            {/* Chat History - Only show when we have chat history */}
-            {chatHistory.length > 0 && (
-              <div className="flex-1 space-y-6 w-full">
-                <AnimatePresence mode="popLayout">
-                  {chatHistory.map((item) => (
-                    <motion.div
-                      key={item.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -20 }}
-                      transition={{ duration: 0.5 }}
-                      layout
-                    >
-                      {item.type === 'prompt' ? (
-                        <div className="flex justify-end mb-4">
-                          <div className="bg-zinc-800 rounded-2xl rounded-tr-sm px-6 py-4 max-w-[80%]" style={{ 
-                            maxWidth: windowWidth < 640 ? '85%' : '350px' 
-                          }}>
-                            <p className="text-white">{item.content}</p>
-                            {item.tokensUsed && (
-                              <p className="text-zinc-500 text-xs mt-1 text-right">
-                                {item.tokensUsed} token{item.tokensUsed !== 1 ? 's' : ''} used
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex justify-start mb-4">
-                          <div className="bg-zinc-900/50 backdrop-blur-sm rounded-2xl rounded-tl-sm p-3 max-w-[90%]">
-                            <img src={item.content} alt="Generated result" className="rounded-lg max-h-[450px] w-auto" />
-                          </div>
-                        </div>
-                      )}
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </div>
-            )}
-
-            {/* Loading indicator */}
-            {isGenerating && (
-              <motion.div 
-                className="flex flex-col items-center justify-center py-8 w-full"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                <LoadingSpinner />
-              </motion.div>
-            )}
-          </div>
+              {/* Loading indicator */}
+              {isGenerating && (
+                <motion.div 
+                  className="flex flex-col items-center justify-center py-8 w-full"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <LoadingSpinner />
+                </motion.div>
+              )}
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
 
