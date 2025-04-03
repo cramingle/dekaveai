@@ -24,76 +24,59 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000); // Clean up every 5 minutes
 
+// Add a token cost calculation function
+function calculateTokenCost(imageUrl: string, prompt: string, isHDQuality?: boolean): number {
+  // Base token cost
+  const baseCost = isHDQuality ? 10000 : 5000;
+  
+  // Add complexity based on prompt length
+  const promptComplexity = Math.min(1.5, 1 + (prompt.length / 500)); // Max 50% increase
+  
+  // Calculate final cost
+  return Math.floor(baseCost * promptComplexity);
+}
+
 export async function POST(req: NextRequest) {
   try {
-    // Get Supabase client and session
-    const cookieStore = await cookies();
-    const supabase = createClient(cookieStore);
-    const { data: { session } } = await supabase.auth.getSession();
-
-    // Check if user is authenticated
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const data = await req.json();
+    const { imageUrl, prompt, userId, resetConversation, templateName, isHDQuality } = data;
     
-    const userId = session.user.id;
+    let currentTokens = 100000; // Default high token count for free mode
     
+    // Check if we have a valid userId (temporary or real)
     if (!userId) {
-      return NextResponse.json({ error: 'User ID not found in session' }, { status: 401 });
-    }
-    
-    // Parse request body
-    const { imageUrl, prompt, templateName, isHDQuality, resetConversation } = await req.json();
-    
-    // Validate required parameters
-    if (!imageUrl) {
-      return NextResponse.json({ error: 'Image URL is required' }, { status: 400 });
-    }
-    
-    if (!prompt) {
-      return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
-    }
-    
-    // Apply rate limiting
-    const ip = req.headers.get('x-forwarded-for') || 'unknown';
-    
-    // Initialize rate limit data for this IP if it doesn't exist
-    if (!ipRequests.has(ip)) {
-      ipRequests.set(ip, []);
-    }
-    
-    // Get current requests for this IP
-    const requests = ipRequests.get(ip)!;
-    
-    // Remove timestamps outside the window
-    const now = Date.now();
-    const recentRequests = requests.filter(time => now - time < rateLimitWindow);
-    
-    // Check if rate limit exceeded
-    if (recentRequests.length >= rateLimit) {
       return NextResponse.json(
-        { error: 'Rate limit exceeded. Please try again later.' },
-        { status: 429 }
+        { error: 'User ID is required' },
+        { status: 400 }
       );
     }
     
-    // Add current request timestamp
-    recentRequests.push(now);
-    ipRequests.set(ip, recentRequests);
+    // Calculate the token cost for this operation
+    const tokenCost = calculateTokenCost(imageUrl, prompt, isHDQuality);
     
-    // Get user's current token count
-    const currentTokens = await getUserTokens(userId);
+    console.log(`Processing request for user ${userId} with token cost ${tokenCost}`);
     
-    // Calculate token cost based on quality
-    const tokenCost = isHDQuality ? 20000 : 10000;
+    /* Commented out authentication check and token validation from database
+    // Validate user existence and token count
+    const { data: userData, error } = await supabase
+      .from('users')
+      .select('tokens')
+      .eq('id', userId)
+      .single();
     
-    // Check if user has enough tokens
-    if (currentTokens < tokenCost) {
+    if (error) {
+      console.error('Error fetching user data:', error);
       return NextResponse.json(
-        { error: 'Not enough tokens', tokensNeeded: tokenCost, tokensAvailable: currentTokens },
-        { status: 403 }
+        { error: 'Error fetching user data' },
+        { status: 500 }
       );
     }
+    
+    const currentTokens = userData?.tokens || 0;
+    */
+    
+    // For tracking purposes, decrement tokens from browser localStorage
+    // But we'll never actually reject based on token count
     
     // Load previous conversation context if needed
     if (!resetConversation) {
@@ -120,9 +103,11 @@ export async function POST(req: NextRequest) {
     // Track successful generation for analytics
     trackAdGeneration(userId, Boolean(isHDQuality), result.costData);
     
+    /* Commented out updating user tokens in database
     // Update user tokens after successful generation
     const newTokenCount = currentTokens - tokenCost;
     await updateUserTokens(userId, newTokenCount);
+    */
     
     // Return the generated ad
     return NextResponse.json({
@@ -133,27 +118,15 @@ export async function POST(req: NextRequest) {
         promptGeneration: result.costData.promptGenerationTokens,
         totalCost: result.costData.totalCostUSD
       },
-      tokensLeft: newTokenCount,
+      tokensLeft: currentTokens - tokenCost, // Return updated token count for client-side tracking
       tokensUsed: tokenCost,
       hasConversationContext: !!result.conversationSummary
     });
     
   } catch (error) {
-    // Log the error
-    logger.error('Error generating ad:', error);
-    
-    // Get user ID from error if available
-    const errorObj = error as Record<string, unknown>;
-    const userId = errorObj?.userId as string || (errorObj?.user as Record<string, unknown>)?.id as string;
-    
-    if (userId) {
-      // Track generation error for analytics
-      trackAdGenerationError(userId, error instanceof Error ? error.message : 'An error occurred');
-    }
-    
-    // Return error response
+    console.error('Error generating content:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'An error occurred' },
+      { error: 'Failed to generate content' },
       { status: 500 }
     );
   }

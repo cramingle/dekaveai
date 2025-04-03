@@ -93,7 +93,7 @@ interface AppState {
 }
 
 export default function Home() {
-  const { user, isLoading, tokens, isAuthenticated } = useAuth();
+  const { user, isLoading, tokens, isAuthenticated, refreshTokenCount } = useAuth();
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [brandProfileAnalyzed, setBrandProfileAnalyzed] = useState(false);
@@ -106,10 +106,10 @@ export default function Home() {
   const [isProcessingPayment, setIsProcessingPayment] = useState<boolean>(false);
   const [windowWidth, setWindowWidth] = useState<number>(0);
   const [isHDQuality, setIsHDQuality] = useState<boolean>(false);
-  const [maxTokens, setMaxTokens] = useState<number>(10);
+  const [maxTokens, setMaxTokens] = useState<number>(100000);
   const [tokenInfo, setTokenInfo] = useState<TokenUsageInfo>({
-    tier: 'Pioneer',
-    maxTokens: 3,
+    tier: 'Overlord',
+    maxTokens: 100000,
     tokenRatio: 1.2,
     promptMultiplier: 1.5,
     imageMultiplier: 2,
@@ -136,30 +136,16 @@ export default function Home() {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Log authentication state for debugging
+  // Log temporary user state for debugging
   useEffect(() => {
     console.log('Auth state in Home component:', { 
       isAuthenticated, 
-      user: user ? `User ${user.id} (${user.email})` : 'No user', 
+      user: user ? `User ${user.id}` : 'No user', 
       tokens, 
       isLoading 
     });
     
-    // Check localStorage for cached auth as a backup
-    if (!isAuthenticated && !isLoading) {
-      try {
-        const cachedUser = localStorage.getItem('dekave_user');
-        if (cachedUser) {
-          const parsedUser = JSON.parse(cachedUser);
-          console.log('Found cached user authentication:', parsedUser);
-          
-          // Force reload to restore authentication
-          window.location.reload();
-        }
-      } catch (e) {
-        console.error('Error checking cached auth:', e);
-      }
-    }
+    // No need to check localStorage for cached auth as we use temporary user system
   }, [isAuthenticated, user, tokens, isLoading]);
 
   // Listen for state restoration events
@@ -315,24 +301,12 @@ export default function Home() {
     };
   }, []);
   
-  // Show token purchase modal - make sure this is always called, not conditionally rendered
+  // Remove token purchase modal functionality - not needed in free mode
   useEffect(() => {
-    // Only execute this logic in browser environment
-    if (typeof window === 'undefined') return;
-    
-    // Check for URL parameter (for manual token purchase)
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('showTokenTopup') === 'true' && user) {
-      setShowTokenTopup(true);
-      
-      // Clean the URL to remove the parameter (to avoid showing the modal again on refresh)
-      const url = new URL(window.location.href);
-      url.searchParams.delete('showTokenTopup');
-      window.history.replaceState({}, '', url.toString());
-    }
-  }, [user]);
+    // No-op, tokens are always available
+  }, []);
   
-  // Show a full-screen loading state until authentication is resolved
+  // Show a full-screen loading state until system is initialized
   if (isLoading) {
     console.log('Rendering loading spinner because isLoading is true');
     return (
@@ -344,8 +318,8 @@ export default function Home() {
   
   console.log('Proceeding to render main app UI, isLoading:', isLoading);
   
-  // Save state before showing paywall
-  const saveStateAndShowPaywall = () => {
+  // Save state (for potential restoration) - no need for paywall anymore
+  const saveState = () => {
     // Create a stable copy of the current state with all relevant data
     const currentState = {
       uploadedImages,
@@ -365,7 +339,7 @@ export default function Home() {
     
     // Save in a try-catch to handle potential serialization errors
     try {
-      console.log('Saving complete state before auth:', currentState);
+      console.log('Saving complete state:', currentState);
       sessionStorage.setItem('userState', JSON.stringify(currentState));
       
       // Also save in localStorage as backup in case sessionStorage is cleared
@@ -380,24 +354,11 @@ export default function Home() {
     } catch (error) {
       console.error('Error saving state:', error);
     }
-    
-    // Show paywall after state is saved
-    setShowPaywall(true);
   };
 
-  // Handle token check and purchase flow
+  // Handle token check - always returns true in free mode
   const handleTokenCheck = () => {
-    if (!user) {
-      saveStateAndShowPaywall();
-      return false;
-    }
-    
-    if (tokens < 1) {
-      setShowTokenTopup(true);
-      return false;
-    }
-    
-    return true;
+    return true; // Always have tokens in free mode
   };
   
   // Token utility functions
@@ -464,18 +425,8 @@ export default function Home() {
     const promptComplexity = Math.min(1.5, 1 + (prompt.length / 500)); // Max 50% increase
     totalTokens = Math.floor(totalTokens * promptComplexity);
 
-    // Calculate OpenAI cost (as of 2024 pricing)
-    // GPT-4V input: $0.01 per 1K tokens
-    // Image generation: ~$0.02 per image (standard) or ~$0.04 (HD)
-    const openAICost = (totalTokens / 1000 * 0.01) + (isHDQuality ? 0.04 : 0.02);
-
-    // Add our profit margin (90% markup)
-    const profitMargin = 1.9; // 90% profit
-    const finalCost = openAICost * profitMargin;
-
-    // Convert cost back to tokens for user display
-    // We use a token:cost ratio where 1000 tokens ≈ $0.02 after markup
-    return Math.ceil(finalCost * 50000); // Convert dollars back to tokens
+    // Calculate token cost (simpler now)
+    return Math.min(totalTokens, 10000); // Cap at 10,000 tokens per request
   };
   
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -531,10 +482,7 @@ export default function Home() {
   const handlePromptSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!handleTokenCheck()) {
-      return;
-    }
-
+    // No need to check tokens, always have enough
     if (!userPrompt.trim()) return;
     
     // Calculate token cost for this operation
@@ -551,12 +499,76 @@ export default function Home() {
       messageType: 'text'
     } as ChatMessage]);
     
+    // Track token usage in localStorage directly
+    const updatedTokens = Math.max(0, tokens - tokenCost);
+    localStorage.setItem('dekave_temp_tokens', updatedTokens.toString());
+    
     // Clear the input after submission
     setUserPrompt('');
+    
+    try {
+      // Make actual API call with user's temporary ID
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          imageUrl: uploadedImages[0],
+          prompt: userPrompt,
+          userId: user?.id,
+          isHDQuality,
+          resetConversation: false
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate content');
+      }
+      
+      const result = await response.json();
+      
+      // Add the generated response to chat history
+      if (result.adImageUrl) {
+        setChatHistory(prev => [...prev, {
+          id: `result-${Date.now()}`,
+          type: 'result',
+          content: result.adImageUrl,
+          timestamp: Date.now(),
+          messageType: 'image'
+        }]);
+      }
+      
+      if (result.adDescription) {
+        setChatHistory(prev => [...prev, {
+          id: `desc-${Date.now()}`,
+          type: 'result',
+          content: result.adDescription,
+          timestamp: Date.now(),
+          messageType: 'text'
+        }]);
+      }
+      
+      // Refresh token count to show updated values
+      await refreshTokenCount();
+    } catch (error) {
+      console.error('Error generating content:', error);
+      setChatHistory(prev => [...prev, {
+        id: `error-${Date.now()}`,
+        type: 'result',
+        content: "Sorry, there was an error generating your ad. Please try again.",
+        timestamp: Date.now(),
+        messageType: 'text'
+      }]);
+    } finally {
+      setIsGenerating(false);
+    }
   };
   
-  const handleBuyMoreTokens = () => {
-    setShowTokenTopup(true);
+  // Replace token purchase with token refresh info
+  const handleTokenRefreshInfo = () => {
+    // Show info about token refresh
+    alert("Tokens refresh daily! You have " + tokens + " tokens remaining today.");
   };
   
   const startNewChat = () => {
@@ -667,12 +679,12 @@ export default function Home() {
         <div className="flex items-center gap-4">
           {user && (
             <button 
-              onClick={handleBuyMoreTokens}
-              className={`text-sm bg-zinc-800/50 backdrop-blur-sm rounded-full px-3 py-1.5 hover:bg-zinc-700/50 transition-colors flex items-center ${tokens < 3 ? 'text-amber-400' : tokens < maxTokens / 2 ? 'text-zinc-300' : 'text-zinc-400'}`}
+              onClick={handleTokenRefreshInfo}
+              className={`text-sm bg-zinc-800/50 backdrop-blur-sm rounded-full px-3 py-1.5 hover:bg-zinc-700/50 transition-colors flex items-center ${tokens < 10000 ? 'text-amber-400' : 'text-zinc-300'}`}
             >
-              <span className="font-medium">{tokens}</span>
+              <span className="font-medium">{tokens.toLocaleString()}</span>
               <span className="ml-1">tokens</span>
-              {tokens < 3 && (
+              {tokens < 10000 && (
                 <span className="ml-1.5 text-amber-400">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                     <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
@@ -962,7 +974,7 @@ export default function Home() {
                 
                 <button 
                   onClick={(e) => handlePromptSubmit(e)}
-                  disabled={!userPrompt.trim() || !uploadedImages.length || isGenerating || (user && tokens < calculateTokenUsage(userPrompt)) || false}
+                  disabled={!userPrompt.trim() || !uploadedImages.length || isGenerating}
                   className="rounded-full bg-white text-black w-8 h-8 flex items-center justify-center hover:bg-gray-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -992,21 +1004,6 @@ export default function Home() {
               <p className="text-xl font-medium text-white/80">Drop your images here</p>
             </div>
           </motion.div>
-        )}
-        
-        {/* Paywall overlay - for non-authenticated users */}
-        {!isLoading && showPaywall && (
-          <Paywall 
-            onClose={() => setShowPaywall(false)}
-            isLoading={isProcessingPayment}
-          />
-        )}
-        
-        {/* Token Topup overlay - for authenticated users */}
-        {!isLoading && showTokenTopup && (
-          <TokenTopup 
-            onClose={() => setShowTokenTopup(false)}
-          />
         )}
       </AnimatePresence>
     </div>

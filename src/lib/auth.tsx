@@ -7,7 +7,7 @@ import {
   useEffect,
   ReactNode
 } from 'react';
-import { createClient } from '@/lib/supabase/client';
+// import { createClient } from '@/lib/supabase/client';
 import { trackEvent, EventType } from '@/lib/analytics';
 
 // Add interface for extended user
@@ -42,14 +42,32 @@ type UserAuth = {
 // Create the auth context
 const AuthContext = createContext<UserAuth | undefined>(undefined);
 
+// Function to generate a unique identifier
+const generateUniqueId = () => {
+  return 'user_' + Math.random().toString(36).substring(2, 15);
+};
+
+// Function to check if tokens should be refreshed
+const shouldRefreshTokens = (lastRefresh: string) => {
+  if (!lastRefresh) return true;
+  
+  const lastRefreshDate = new Date(lastRefresh);
+  const now = new Date();
+  
+  // Check if it's a new day (different day, month, or year)
+  return lastRefreshDate.getDate() !== now.getDate() ||
+         lastRefreshDate.getMonth() !== now.getMonth() ||
+         lastRefreshDate.getFullYear() !== now.getFullYear();
+};
+
 // Provider component
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const supabase = createClient();
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  // const supabase = createClient();
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true); // Always authenticated
   const [user, setUser] = useState<ExtendedUser | null>(null);
-  const [tokens, setTokens] = useState<number>(0);
+  const [tokens, setTokens] = useState<number>(100000); // Start with 100,000 tokens
   const [tokensExpiryDate, setTokensExpiryDate] = useState<string | undefined>(undefined);
-  const [tier, setTier] = useState<'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord'>('Pioneer');
+  const [tier, setTier] = useState<'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord'>('Overlord'); // Everyone gets top tier
   const [isLoading, setIsLoading] = useState(true);
 
   // Add this before the useEffect in AuthProvider
@@ -112,6 +130,117 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Initialize the temporary user on first load
+  useEffect(() => {
+    let isMounted = true;
+    console.log('Setting up temporary user system');
+    
+    const initializeTemporaryUser = () => {
+      try {
+        // Check localStorage for existing user
+        const storedUser = localStorage.getItem('dekave_temp_user');
+        let userId, lastTokenRefresh;
+        
+        if (storedUser) {
+          // Use existing user
+          const parsedUser = JSON.parse(storedUser);
+          userId = parsedUser.id;
+          lastTokenRefresh = parsedUser.lastTokenRefresh;
+          console.log('Found existing temporary user:', userId);
+          
+          // Check if tokens should be refreshed
+          if (shouldRefreshTokens(lastTokenRefresh)) {
+            console.log('Refreshing tokens for temporary user');
+            lastTokenRefresh = new Date().toISOString();
+            localStorage.setItem('dekave_temp_user', JSON.stringify({
+              id: userId,
+              lastTokenRefresh,
+            }));
+            
+            // Reset tokens to maximum
+            setTokens(100000);
+          } else {
+            // Get saved token count if available
+            const savedTokens = localStorage.getItem('dekave_temp_tokens');
+            if (savedTokens) {
+              setTokens(parseInt(savedTokens, 10));
+            }
+          }
+        } else {
+          // Generate new user
+          userId = generateUniqueId();
+          lastTokenRefresh = new Date().toISOString();
+          console.log('Created new temporary user:', userId);
+          
+          // Store in localStorage
+          localStorage.setItem('dekave_temp_user', JSON.stringify({
+            id: userId,
+            lastTokenRefresh,
+          }));
+          
+          // Default tokens
+          setTokens(100000);
+        }
+        
+        // Set the user state
+        const temporaryUser: ExtendedUser = {
+          id: userId,
+          email: 'temporary@user.com',
+          tokens: 100000,
+          tier: 'Overlord',
+          hasLoggedInBefore: true,
+          tokens_expiry_date: new Date(new Date().setDate(new Date().getDate() + 1)).toISOString(),
+        };
+        
+        if (isMounted) {
+          setUser(temporaryUser);
+          setIsAuthenticated(true);
+          setTier('Overlord');
+          setTokensExpiryDate(temporaryUser.tokens_expiry_date);
+          setIsLoading(false);
+          
+          // Restore saved state if exists
+          const savedState = sessionStorage.getItem('userState');
+          if (savedState) {
+            try {
+              console.log('Found saved state to restore');
+              dispatchStateRestorationEvent(JSON.parse(savedState));
+            } catch (error) {
+              console.error('Error parsing saved state:', error);
+            }
+          }
+          
+          // Notify components
+          notifyAuthStateChanged();
+        }
+      } catch (error) {
+        console.error('Error initializing temporary user:', error);
+        if (isMounted) setIsLoading(false);
+      }
+    };
+    
+    // Initialize immediately
+    initializeTemporaryUser();
+    
+    // Set up a daily check for token refresh
+    const checkInterval = setInterval(() => {
+      const storedUser = localStorage.getItem('dekave_temp_user');
+      if (storedUser) {
+        const parsedUser = JSON.parse(storedUser);
+        if (shouldRefreshTokens(parsedUser.lastTokenRefresh)) {
+          console.log('Daily token refresh triggered');
+          initializeTemporaryUser();
+        }
+      }
+    }, 3600000); // Check every hour
+    
+    return () => {
+      isMounted = false;
+      clearInterval(checkInterval);
+    };
+  }, []);
+
+/* COMMENTED OUT ORIGINAL AUTH CODE
   // Add this at the beginning of the auth component
   const cleanUrlAfterAuth = () => {
     if (typeof window !== 'undefined') {
@@ -474,38 +603,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   }, []);
+*/
 
-  // Function to sign in with Google
+  // Function to sign in with Google - no-op in free mode
   const signInWithGoogle = async () => {
-    try {
-      // Track sign in attempt
-      trackEvent(EventType.SIGN_IN, {
-        method: 'google',
-        timestamp: new Date().toISOString()
-      });
-      
-      // Get the current URL to use as redirect
-      const currentUrl = window.location.href;
-      
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: currentUrl,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent'
-          }
-        }
-      });
-
-      if (error) throw error;
-    } catch (error) {
-      console.error('Error signing in with Google:', error);
-      throw error;
-    }
+    // No-op, just return a resolved promise
+    return Promise.resolve();
   };
 
-  // Function to log out
+  // Function to log out - reset token count
   const logout = async () => {
     try {
       // Track logout
@@ -515,83 +621,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         timestamp: new Date().toISOString()
       });
       
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      // Reset token count to maximum
+      setTokens(100000);
+      
+      // Update localStorage
+      if (user?.id) {
+        localStorage.setItem('dekave_temp_user', JSON.stringify({
+          id: user.id,
+          lastTokenRefresh: new Date().toISOString(),
+        }));
+        localStorage.setItem('dekave_temp_tokens', '100000');
+      }
+      
+      return Promise.resolve();
     } catch (error) {
-      console.error('Error signing out:', error);
-      throw error;
+      console.error('Error in logout function:', error);
+      return Promise.resolve();
     }
   };
 
   // Function to refresh token count
   const refreshTokenCount = async () => {
-    if (!user?.id) return;
-    
-    try {
-      const { data: userData } = await supabase
-        .from('users')
-        .select('tokens, tier, tokens_expiry_date')
-        .eq('id', user.id)
-        .single();
-
-      if (userData) {
-        setTokens(userData.tokens || 0);
-        setTier(userData.tier || 'Pioneer');
-        setTokensExpiryDate(userData.tokens_expiry_date);
-        setUser(prev => prev ? {
-          ...prev,
-          tokens: userData.tokens || 0,
-          tier: userData.tier || 'Pioneer',
-          tokens_expiry_date: userData.tokens_expiry_date
-        } : null);
-      }
-    } catch (error) {
-      console.error('Error refreshing token count:', error);
-    }
+    // In free mode, just return current token count
+    return Promise.resolve();
   };
 
-  // Function to buy tokens
+  // Function to buy tokens - not needed in free mode, but stub to prevent errors
   const buyTokens = async (packageId: string) => {
-    if (!user?.id) {
-      return { success: false, error: 'Not authenticated' };
-    }
-
-    try {
-      const response = await fetch('/api/create-payment-link', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${user.token}`
-        },
-        body: JSON.stringify({
-          packageId,
-          email: user.email,
-          userId: user.id
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create payment link');
-      }
-
-      // Redirect to payment URL
-      window.location.href = data.url;
-      return { success: true };
-    } catch (error) {
-      console.error('Error buying tokens:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'An error occurred'
-      };
-    }
+    console.log('Token purchase requested but not needed in free mode:', packageId);
+    return { success: true };
   };
 
   // Function to check if tokens are expired
   const tokensExpired = () => {
-    if (!tokensExpiryDate) return false;
-    return new Date(tokensExpiryDate) < new Date();
+    // Tokens never expire in this free mode
+    return false;
   };
 
   // Add this helper function to notify about auth state changes
@@ -603,6 +667,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('Error dispatching auth state change event:', error);
     }
   };
+
+  // Save token usage to localStorage for persistence across sessions
+  useEffect(() => {
+    if (user?.id && tokens !== 100000) {
+      localStorage.setItem('dekave_temp_tokens', tokens.toString());
+    }
+  }, [tokens, user?.id]);
 
   return (
     <AuthContext.Provider value={{
