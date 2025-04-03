@@ -1058,7 +1058,7 @@ export default function Home() {
           )}
 
           <div className="w-full max-w-5xl mx-auto flex flex-col">
-            {/* Uploaded Images Grid - Only show when we have uploads */}
+            {/* Uploaded Images Grid - Only show the brand image */}
             {uploadedImages.length > 0 && (
               <motion.div
                 key="image-grid"
@@ -1071,36 +1071,22 @@ export default function Home() {
                   maxWidth: windowWidth < 640 ? '95%' : '350px',
                   marginLeft: 'auto'
                 }}>
-                  {uploadedImages.map((image) => (
+                  {/* Only display the original brand image (the first uploaded image) */}
+                  {uploadedImages.length > 0 && (
                     <motion.div
-                      key={image}
+                      key={uploadedImages[0]} // Use the first image (brand image)
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.9 }}
                       className="relative overflow-hidden border border-white/10 rounded-lg"
                       style={{ 
-                        width: uploadedImages.length > 2 
-                          ? (windowWidth < 640 ? '50px' : '70px') 
-                          : (windowWidth < 640 ? '70px' : '90px'),
-                        height: uploadedImages.length > 2 
-                          ? (windowWidth < 640 ? '50px' : '70px') 
-                          : (windowWidth < 640 ? '70px' : '90px'),
+                        width: windowWidth < 640 ? '70px' : '90px',
+                        height: windowWidth < 640 ? '70px' : '90px',
                       }}
                     >
-                      <img src={image} alt="Uploaded product" className="w-full h-full object-cover" />
-                      <button 
-                        onClick={() => {
-                          setUploadedImages(prev => prev.filter(img => img !== image));
-                        }}
-                        className="absolute top-1 right-1 bg-black/70 hover:bg-black/90 rounded-full p-0.5 transition-colors"
-                        aria-label="Remove image"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-2 w-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
+                      <img src={uploadedImages[0]} alt="Brand image" className="w-full h-full object-cover" />
                     </motion.div>
-                  ))}
+                  )}
                 </div>
               </motion.div>
             )}
