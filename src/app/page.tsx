@@ -1128,7 +1128,17 @@ export default function Home() {
                 />
                 
                 <button 
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => {
+                    console.log('Upload button clicked. States:', {
+                      isGenerating,
+                      isAnalyzingBrand,
+                      brandProfileAnalyzed,
+                      hasImages: uploadedImages.length > 0,
+                      chatStarted,
+                      fileInputRef: !!fileInputRef.current
+                    });
+                    fileInputRef.current?.click();
+                  }}
                   className="rounded-full bg-zinc-800/80 backdrop-blur-sm w-8 h-8 flex items-center justify-center hover:bg-zinc-700/80 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={isGenerating}
                 >
