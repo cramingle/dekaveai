@@ -53,6 +53,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [tier, setTier] = useState<'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord'>('Pioneer');
   const [isLoading, setIsLoading] = useState(true);
 
+  // Add this before the useEffect in AuthProvider
+  const logAuthState = (message: string) => {
+    console.log(`AUTH_DEBUG: ${message}`, {
+      isAuthenticated,
+      hasUser: !!user,
+      userId: user?.id,
+      tokens,
+      isLoading,
+      time: new Date().toISOString()
+    });
+  };
+
   // Function to safely dispatch state restoration event
   const dispatchStateRestorationEvent = (state: any) => {
     try {
@@ -119,8 +131,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Initialize auth state
+  // Add this at the top of the component, before initAuth
   useEffect(() => {
+    // Initialize auth state
     let isMounted = true;
     let authStateChanged = false;
     
@@ -134,298 +147,126 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
       }
     }, 10000); // 10 seconds maximum loading time
-    
-    const initAuth = async () => {
-      try {
-        // Check if we have a code in the URL
-        const params = new URLSearchParams(window.location.search);
-        const hasAuthCode = params.has('code');
 
-        // Keep loading state true while processing auth code
-        if (hasAuthCode) {
-          if (isMounted) setIsLoading(true);
-          
-          // Get the code from the URL
-          const code = params.get('code');
-          
-          // Exchange the code for a session
-          if (code) {
-            console.log('Exchanging auth code for session');
-            const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    console.log('Setting up auth state listener');
+
+    // Set up auth change handler BEFORE initializing the session
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth state changed:', event);
+        authStateChanged = true;
+
+        // Important: Process the auth state immediately
+        try {
+          if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+            console.log('User session detected:', session?.user?.id);
+            logAuthState('User session detected');
             
-            if (error) {
-              console.error('Error exchanging code for session:', error);
-              if (isMounted) setIsLoading(false);
-              return;
-            }
-            
-            console.log('Session established successfully:', !!data.session);
-            authStateChanged = true;
-            
-            // Clean up the URL to prevent reprocessing on page refresh
-            try {
-              const url = new URL(window.location.href);
-              url.searchParams.delete('code');
-              window.history.replaceState({}, '', url.toString());
-            } catch (urlError) {
-              console.error('Error cleaning up URL:', urlError);
-            }
-            
-            // Immediately set authenticated state if we have a session
-            if (data.session && isMounted) {
-              console.log('Setting initial authenticated state from code exchange');
-              setIsAuthenticated(true);
-              
+            if (session?.user && isMounted) {
               // Get user data from database
-              const { data: userData } = await supabase
+              const { data: userData, error } = await supabase
                 .from('users')
                 .select('*')
-                .eq('id', data.session.user.id)
+                .eq('id', session.user.id)
                 .single();
-                
-              if (userData && isMounted) {
-                setUser({
-                  id: data.session.user.id,
-                  email: data.session.user.email!,
-                  tokens: userData.tokens || 0,
-                  tier: userData.tier || 'Pioneer',
-                  tokens_expiry_date: userData.tokens_expiry_date,
-                  hasLoggedInBefore: ((userData.tokens ?? 0) > 0 || !!userData.tokens_expiry_date),
-                  hasStoredConversation: !!userData.conversation_last_used,
-                  conversationLastUsed: userData.conversation_last_used,
-                  token: data.session.access_token,
-                  stripeCustomerId: userData.stripe_customer_id
-                });
-                setTokens(userData.tokens || 0);
-                setTokensExpiryDate(userData.tokens_expiry_date);
-                setTier(userData.tier || 'Pioneer');
-                
-                // Critical: Ensure loading state is set to false after auth code exchange
-                setIsLoading(false);
-                
-                // Store user in localStorage to help with persistence
-                localStorage.setItem('dekave_user', JSON.stringify({
-                  id: data.session.user.id,
-                  email: data.session.user.email,
-                  isAuthenticated: true
-                }));
-                
-                // Notify components about auth state change
-                notifyAuthStateChanged();
-                
-                // If we had an auth code, restore saved state
-                if (hasAuthCode) {
-                  const savedState = sessionStorage.getItem('userState');
-                  
-                  if (savedState) {
-                    try {
-                      const state = JSON.parse(savedState);
-                      
-                      // Use a simpler approach to dispatch state restoration
-                      setTimeout(() => {
-                        if (isMounted) dispatchStateRestorationEvent(state);
-                      }, 250);
-                    } catch (error) {
-                      console.error('Error parsing saved state after redirect:', error);
-                    }
-                  }
-                }
-              } else if (isMounted) {
-                // Create user if not found
+
+              if (error) {
+                console.error('Error fetching user data:', error);
+                // Handle creating a new user here if needed
                 try {
-                  console.log('Creating new user during code exchange for:', data.session.user.id);
-                  await supabase
+                  if (!isMounted) return;
+                  
+                  console.log('Creating new user for:', session.user.id);
+                  const { error: insertError } = await supabase
                     .from('users')
                     .insert({
-                      id: data.session.user.id,
-                      email: data.session.user.email,
+                      id: session.user.id,
+                      email: session.user.email,
                       tokens: 0,
                       tier: 'Pioneer',
                       created_at: new Date().toISOString()
                     });
-                  
-                  // Set default user state
-                  setUser({
-                    id: data.session.user.id,
-                    email: data.session.user.email!,
-                    tokens: 0,
-                    tier: 'Pioneer' as 'Pioneer',
-                    hasLoggedInBefore: false,
-                    token: data.session.access_token,
-                  });
-                  setTokens(0);
-                  setTier('Pioneer');
-                  setIsAuthenticated(true);
-                  
-                  // Store user in localStorage to help with persistence
-                  localStorage.setItem('dekave_user', JSON.stringify({
-                    id: data.session.user.id,
-                    email: data.session.user.email,
-                    isAuthenticated: true
-                  }));
-                  
-                  // Notify components about auth state change
-                  notifyAuthStateChanged();
-                  
-                  // Critical: Ensure loading state is set to false after creating new user
-                  setIsLoading(false);
+                    
+                  if (insertError) {
+                    console.error('Error creating user data:', insertError);
+                    if (isMounted) setIsLoading(false);
+                  } else {
+                    // Set default user state
+                    setUser({
+                      id: session.user.id,
+                      email: session.user.email!,
+                      tokens: 0,
+                      tier: 'Pioneer' as 'Pioneer',
+                      hasLoggedInBefore: false,
+                      token: session.access_token,
+                    });
+                    setTokens(0);
+                    setTier('Pioneer');
+                    setIsAuthenticated(true);
+                    
+                    // Store in localStorage
+                    localStorage.setItem('dekave_user', JSON.stringify({
+                      id: session.user.id,
+                      email: session.user.email,
+                      isAuthenticated: true
+                    }));
+
+                    console.log('Setting authenticated state with new user');
+                    logAuthState('Setting authenticated with new user');
+                    
+                    // MUST set isLoading to false here
+                    if (isMounted) setIsLoading(false);
+                    
+                    // Notify components
+                    notifyAuthStateChanged();
+                  }
                 } catch (createError) {
-                  console.error('Error creating user during code exchange:', createError);
-                  // Ensure loading state is false even on error
+                  console.error('Error in user creation:', createError);
                   if (isMounted) setIsLoading(false);
                 }
-              }
-            } else {
-              // No session from code exchange
-              if (isMounted) setIsLoading(false);
-            }
-          } else {
-            // No code parameter
-            if (isMounted) setIsLoading(false);
-          }
-        }
-
-        // Get current session
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.user && isMounted) {
-          // Set flag to indicate auth state has changed
-          authStateChanged = true;
-          
-          // Get user data from database
-          const { data: userData } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-
-          if (userData) {
-            setUser({
-              id: session.user.id,
-              email: session.user.email!,
-              tokens: userData.tokens || 0,
-              tier: userData.tier || 'Pioneer',
-              tokens_expiry_date: userData.tokens_expiry_date,
-              hasLoggedInBefore: ((userData.tokens ?? 0) > 0 || !!userData.tokens_expiry_date),
-              hasStoredConversation: !!userData.conversation_last_used,
-              conversationLastUsed: userData.conversation_last_used,
-              token: session.access_token,
-              stripeCustomerId: userData.stripe_customer_id
-            });
-            setTokens(userData.tokens || 0);
-            setTokensExpiryDate(userData.tokens_expiry_date);
-            setTier(userData.tier || 'Pioneer');
-            setIsAuthenticated(true);
-            
-            // Store user in localStorage to help with persistence
-            localStorage.setItem('dekave_user', JSON.stringify({
-              id: session.user.id,
-              email: session.user.email,
-              isAuthenticated: true
-            }));
-            
-            // Notify components about auth state change
-            notifyAuthStateChanged();
-          }
-        } else {
-          // If we have cached user data in localStorage but no session, try to recover
-          try {
-            const cachedUser = localStorage.getItem('dekave_user');
-            if (cachedUser && !isAuthenticated) {
-              const parsedUser = JSON.parse(cachedUser);
-              // If we have cached data but no session, we need to clear it
-              localStorage.removeItem('dekave_user');
-            }
-          } catch (e) {
-            console.error('Error checking cached user:', e);
-          }
-        }
-        
-        // Ensure loading state is set to false after all auth checks
-        if (isMounted) setIsLoading(false);
-      } catch (error) {
-        console.error('Error initializing auth:', error);
-        // Ensure loading state is set to false even on error
-        if (isMounted) setIsLoading(false);
-      }
-    };
-
-    initAuth();
-
-    // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event: AuthChangeEvent, session: Session | null) => {
-        console.log('Auth state changed:', event);
-        
-        // Mark that auth state has changed to prevent safety timeout from triggering
-        authStateChanged = true;
-        
-        if (event === 'SIGNED_IN' && session?.user) {
-          console.log('User signed in:', session.user.id);
-          
-          try {
-            // Only process if component is still mounted
-            if (!isMounted) return;
-            
-            // Get user data from database
-            const { data: userData, error } = await supabase
-              .from('users')
-              .select('*')
-              .eq('id', session.user.id)
-              .single();
-
-            if (error) {
-              console.error('Error fetching user data after sign in:', error);
-              
-              // Create user entry if not found
-              try {
-                if (!isMounted) return;
-                
-                console.log('Creating new user data for:', session.user.id);
-                const { error: insertError } = await supabase
-                  .from('users')
-                  .insert({
-                    id: session.user.id,
-                    email: session.user.email,
-                    tokens: 0,
-                    tier: 'Pioneer',
-                    created_at: new Date().toISOString()
-                  });
+              } else {
+                // We have existing user data
+                if (userData && isMounted) {
+                  console.log('Setting user state with existing user data');
+                  logAuthState('Before setting authenticated with existing user');
                   
-                if (insertError) {
-                  console.error('Error creating user data:', insertError);
-                } else if (isMounted) {
-                  // Set user state with default values
-                  const userState = {
+                  setUser({
                     id: session.user.id,
                     email: session.user.email!,
-                    tokens: 0,
-                    tier: 'Pioneer' as 'Pioneer',
-                    hasLoggedInBefore: false,
+                    tokens: userData.tokens || 0,
+                    tier: userData.tier || 'Pioneer',
+                    tokens_expiry_date: userData.tokens_expiry_date,
+                    hasLoggedInBefore: ((userData.tokens ?? 0) > 0 || !!userData.tokens_expiry_date),
+                    hasStoredConversation: !!userData.conversation_last_used,
+                    conversationLastUsed: userData.conversation_last_used,
                     token: session.access_token,
-                  };
-                  
-                  setUser(userState);
-                  setTokens(0);
-                  setTier('Pioneer');
+                    stripeCustomerId: userData.stripe_customer_id
+                  });
+                  setTokens(userData.tokens || 0);
+                  setTokensExpiryDate(userData.tokens_expiry_date);
+                  setTier(userData.tier || 'Pioneer');
                   setIsAuthenticated(true);
-                  setIsLoading(false);
                   
-                  // Store user in localStorage to help with persistence
+                  // Store in localStorage
                   localStorage.setItem('dekave_user', JSON.stringify({
                     id: session.user.id,
                     email: session.user.email,
                     isAuthenticated: true
                   }));
                   
-                  // Notify components about auth state change
-                  notifyAuthStateChanged();
+                  console.log('Set authenticated state to true');
+                  logAuthState('After setting authenticated with existing user');
+                  
+                  // MUST set isLoading to false here
+                  if (isMounted) setIsLoading(false);
                   
                   // Restore saved state if exists
                   const savedState = sessionStorage.getItem('userState');
                   if (savedState) {
                     try {
+                      console.log('Found saved state to restore');
                       const state = JSON.parse(savedState);
+                      // Use a simple timeout for restoration
                       setTimeout(() => {
                         if (isMounted) dispatchStateRestorationEvent(state);
                       }, 250);
@@ -433,80 +274,110 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                       console.error('Error parsing saved state:', error);
                     }
                   }
-                }
-              } catch (createError) {
-                console.error('Error in user creation process:', createError);
-                if (isMounted) setIsLoading(false);
-              }
-              
-              return;
-            }
-
-            // If user data was found in the database and component still mounted
-            if (userData && isMounted) {
-              const userState = {
-                id: session.user.id,
-                email: session.user.email!,
-                tokens: userData.tokens || 0,
-                tier: userData.tier || 'Pioneer',
-                tokens_expiry_date: userData.tokens_expiry_date,
-                hasLoggedInBefore: ((userData.tokens ?? 0) > 0 || !!userData.tokens_expiry_date),
-                hasStoredConversation: !!userData.conversation_last_used,
-                conversationLastUsed: userData.conversation_last_used,
-                token: session.access_token,
-                stripeCustomerId: userData.stripe_customer_id
-              };
-              
-              setUser(userState);
-              setTokens(userData.tokens || 0);
-              setTokensExpiryDate(userData.tokens_expiry_date);
-              setTier(userData.tier || 'Pioneer');
-              setIsAuthenticated(true);
-              setIsLoading(false);
-              
-              // Store user in localStorage to help with persistence
-              localStorage.setItem('dekave_user', JSON.stringify({
-                id: session.user.id,
-                email: session.user.email,
-                isAuthenticated: true
-              }));
-              
-              // Notify components about auth state change
-              notifyAuthStateChanged();
-              
-              // Restore saved state if exists
-              const savedState = sessionStorage.getItem('userState');
-              if (savedState) {
-                try {
-                  const state = JSON.parse(savedState);
-                  setTimeout(() => {
-                    if (isMounted) dispatchStateRestorationEvent(state);
-                  }, 250);
-                } catch (error) {
-                  console.error('Error parsing saved state:', error);
+                  
+                  notifyAuthStateChanged();
                 }
               }
             }
-          } catch (error) {
-            console.error('Error in onAuthStateChange handler:', error);
-            if (isMounted) setIsLoading(false);
+          } else if (event === 'SIGNED_OUT' && isMounted) {
+            console.log('User signed out');
+            logAuthState('Before signing out user');
+            setUser(null);
+            setTokens(0);
+            setTokensExpiryDate(undefined);
+            setTier('Pioneer');
+            setIsAuthenticated(false);
+            setIsLoading(false);
+            
+            // Clear user from localStorage
+            localStorage.removeItem('dekave_user');
+            
+            notifyAuthStateChanged();
+            logAuthState('After signing out user');
+          } else if (isMounted) {
+            // Any other event, we should ensure isLoading is updated
+            console.log('Other auth event, setting isLoading false');
+            setIsLoading(false);
           }
-        } else if (event === 'SIGNED_OUT' && isMounted) {
-          setUser(null);
-          setTokens(0);
-          setTokensExpiryDate(undefined);
-          setTier('Pioneer');
-          setIsAuthenticated(false);
-          setIsLoading(false);
-          
-          // Clear user from localStorage
-          localStorage.removeItem('dekave_user');
-          
-          // Notify components about auth state change
-          notifyAuthStateChanged();
+        } catch (error) {
+          console.error('Error handling auth state change:', error);
+          if (isMounted) setIsLoading(false);
         }
       }
     );
+
+    // After setting up the listener, check for a session immediately
+    const checkSession = async () => {
+      logAuthState('Initial auth state check');
+      try {
+        // Check if we have a code in the URL
+        const params = new URLSearchParams(window.location.search);
+        const hasAuthCode = params.has('code');
+        logAuthState('Checking for auth code');
+        
+        if (hasAuthCode) {
+          // We have a code - we need to handle this explicitly
+          console.log('Found auth code in URL, exchanging for session');
+          logAuthState('Found auth code in URL');
+          if (isMounted) setIsLoading(true);
+          
+          const code = params.get('code');
+          if (code) {
+            try {
+              const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+              
+              if (error) {
+                console.error('Error exchanging code for session:', error);
+                if (isMounted) setIsLoading(false);
+              } else {
+                console.log('Code exchange successful, session received');
+                logAuthState('Code exchange successful');
+                
+                // Ensure URL is cleaned
+                try {
+                  const url = new URL(window.location.href);
+                  url.searchParams.delete('code');
+                  window.history.replaceState({}, '', url.toString());
+                } catch (urlError) {
+                  console.error('Error cleaning URL:', urlError);
+                }
+                
+                // After ensuring the URL is cleaned, check for saved state
+                const savedState = sessionStorage.getItem('userState');
+                if (savedState) {
+                  console.log('Found saved state to restore after code exchange');
+                  try {
+                    sessionStorage.setItem('userState_backup', savedState);
+                  } catch (e) {
+                    console.error('Error creating backup of saved state:', e);
+                  }
+                }
+                
+                // The onAuthStateChange listener will handle the rest
+                console.log('Waiting for auth state change event after code exchange');
+              }
+            } catch (codeError) {
+              console.error('Error during code exchange:', codeError);
+              if (isMounted) setIsLoading(false);
+            }
+          }
+        } else {
+          // No code in URL, just check for an existing session
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) {
+            console.log('No active session found');
+            if (isMounted) setIsLoading(false);
+          } else {
+            console.log('Session exists, waiting for INITIAL_SESSION event...');
+          }
+        }
+      } catch (error) {
+        console.error('Error checking session:', error);
+        if (isMounted) setIsLoading(false);
+      }
+    };
+    
+    checkSession();
 
     return () => {
       isMounted = false;
