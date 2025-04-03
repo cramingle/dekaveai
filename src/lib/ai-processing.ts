@@ -106,7 +106,9 @@ export async function loadBrandTemplate(templateName: string): Promise<any> {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     );
-
+    
+    console.log(`Loading brand template: ${templateName}`);
+    
     // Fetch template from brand_templates table
     const { data: template, error } = await supabase
       .from('brand_templates')
@@ -130,7 +132,7 @@ export async function loadBrandTemplate(templateName: string): Promise<any> {
       if (defaultError || !defaultTemplate) {
         throw new Error('No templates found in database');
       }
-
+      
       console.warn(`Template ${templateName} not found, using default template`);
       return defaultTemplate.profile;
     }
@@ -397,7 +399,7 @@ Provide the analysis in a structured JSON format matching the BrandProfile inter
   }
 }
 
-// Update processRequest to use brand profile analysis
+// Use proper template from Supabase in processRequest function
 export async function processRequest(
   imageUrl: string,
   prompt: string,
@@ -464,7 +466,7 @@ export async function processRequest(
     // Add specific instruction for DALL-E prompt creation
     messageContext.push({
       role: 'user',
-      content: `Based on our conversation so far, create a detailed DALL-E 3 prompt for a professional advertisement. Focus on layout, colors, product placement, and typography. Consider the product analysis and brand template. Keep the prompt under 900 characters.`
+      content: `Based on our conversation so far, create a detailed DALL-E 3 prompt for a professional advertisement. Focus on layout, colors, product placement, and typography. Consider the product analysis and brand template. Keep the prompt under 900 characters. Include the following elements from the brand profile: style: ${brandProfile.brandStyle}, colors: ${brandProfile.colorPalette.join(', ')}, mood: ${brandProfile.moodAndTone}, target audience: ${brandProfile.targetAudience}.`
     });
     
     // Use conversation history when generating the DALL-E prompt

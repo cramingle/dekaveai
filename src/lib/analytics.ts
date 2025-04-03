@@ -62,8 +62,28 @@ export async function trackEvent(type: EventType, properties: EventProperties = 
       }
     };
 
+    // Get base URL for the app
+    let baseUrl = '';
+    try {
+      // Try to get window.location if in browser
+      if (typeof window !== 'undefined' && window.location) {
+        baseUrl = `${window.location.protocol}//${window.location.host}`;
+      } else {
+        // Fallback to environment variable or hardcoded value
+        baseUrl = getUrl('/');
+      }
+    } catch (urlError) {
+      console.warn('Could not determine base URL:', urlError);
+      // Default to relative URL as last resort
+      baseUrl = '';
+    }
+
+    // Build absolute URL for tracking endpoint
+    const trackUrl = baseUrl ? `${baseUrl}/api/track` : '/api/track';
+    console.log(`Tracking event to: ${trackUrl}`);
+
     // Send to tracking endpoint
-    const response = await fetch('/api/track', {
+    const response = await fetch(trackUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
