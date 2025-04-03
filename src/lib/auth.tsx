@@ -53,6 +53,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [tier, setTier] = useState<'Pioneer' | 'Voyager' | 'Dominator' | 'Overlord'>('Pioneer');
   const [isLoading, setIsLoading] = useState(true);
 
+  // Function to safely dispatch state restoration event
+  const dispatchStateRestorationEvent = (state: any) => {
+    if (!state) {
+      console.warn('Attempted to dispatch state restoration with empty state');
+      return;
+    }
+    
+    try {
+      console.log('Dispatching state restoration event');
+      window.dispatchEvent(new CustomEvent('authStateRestored', { 
+        detail: {
+          uploadedImages: state.uploadedImages || [],
+          chatHistory: state.chatHistory || [],
+          brandProfileAnalyzed: state.brandProfileAnalyzed || false,
+          userPrompt: state.userPrompt || ''
+        }
+      }));
+      
+      // Clean up the saved state to prevent duplicate restoration
+      sessionStorage.removeItem('userState');
+    } catch (error) {
+      console.error('Error dispatching state restoration event:', error);
+    }
+  };
+
   // Initialize auth state
   useEffect(() => {
     const initAuth = async () => {
@@ -80,6 +105,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
             
             console.log('Session established successfully:', !!data.session);
+            
+            // Clean up the URL to prevent reprocessing on page refresh
+            try {
+              const url = new URL(window.location.href);
+              url.searchParams.delete('code');
+              window.history.replaceState({}, '', url.toString());
+            } catch (urlError) {
+              console.error('Error cleaning up URL:', urlError);
+            }
             
             // Immediately set authenticated state if we have a session
             if (data.session) {
@@ -120,20 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     console.log('Parsing state during code exchange:', state);
                     
                     // Dispatch event with the restored state
-                    window.dispatchEvent(new CustomEvent('authStateRestored', { 
-                      detail: {
-                        uploadedImages: state.uploadedImages || [],
-                        chatHistory: state.chatHistory || [],
-                        brandProfileAnalyzed: state.brandProfileAnalyzed || false,
-                        userPrompt: state.userPrompt || ''
-                      }
-                    }));
-                    
-                    // Clean up the URL and saved state
-                    const url = new URL(window.location.href);
-                    url.searchParams.delete('code');
-                    window.history.replaceState({}, '', url.toString());
-                    sessionStorage.removeItem('userState');
+                    dispatchStateRestorationEvent(state);
                   } catch (error) {
                     console.error('Error parsing saved state during code exchange:', error);
                   }
@@ -211,20 +232,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   console.log('Parsed state after redirect:', state);
                   
                   // Dispatch event with the restored state
-                  window.dispatchEvent(new CustomEvent('authStateRestored', { 
-                    detail: {
-                      uploadedImages: state.uploadedImages || [],
-                      chatHistory: state.chatHistory || [],
-                      brandProfileAnalyzed: state.brandProfileAnalyzed || false,
-                      userPrompt: state.userPrompt || ''
-                    }
-                  }));
-                  
-                  // Clean up the URL and saved state
-                  const url = new URL(window.location.href);
-                  url.searchParams.delete('code');
-                  window.history.replaceState({}, '', url.toString());
-                  sessionStorage.removeItem('userState');
+                  dispatchStateRestorationEvent(state);
                 } catch (error) {
                   console.error('Error parsing saved state after redirect:', error);
                 }
@@ -296,15 +304,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   if (savedState) {
                     try {
                       const state = JSON.parse(savedState);
-                      window.dispatchEvent(new CustomEvent('authStateRestored', { 
-                        detail: {
-                          uploadedImages: state.uploadedImages || [],
-                          chatHistory: state.chatHistory || [],
-                          brandProfileAnalyzed: state.brandProfileAnalyzed || false,
-                          userPrompt: state.userPrompt || ''
-                        }
-                      }));
-                      sessionStorage.removeItem('userState');
+                      dispatchStateRestorationEvent(state);
                     } catch (error) {
                       console.error('Error parsing saved state:', error);
                     }
@@ -348,17 +348,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   console.log('Parsed state:', state);
                   
                   // Dispatch event with the restored state
-                  window.dispatchEvent(new CustomEvent('authStateRestored', { 
-                    detail: {
-                      uploadedImages: state.uploadedImages || [],
-                      chatHistory: state.chatHistory || [],
-                      brandProfileAnalyzed: state.brandProfileAnalyzed || false,
-                      userPrompt: state.userPrompt || ''
-                    }
-                  }));
-                  
-                  // Clear the saved state
-                  sessionStorage.removeItem('userState');
+                  dispatchStateRestorationEvent(state);
                 } catch (error) {
                   console.error('Error parsing saved state:', error);
                 }
@@ -402,15 +392,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   if (savedState) {
                     try {
                       const state = JSON.parse(savedState);
-                      window.dispatchEvent(new CustomEvent('authStateRestored', { 
-                        detail: {
-                          uploadedImages: state.uploadedImages || [],
-                          chatHistory: state.chatHistory || [],
-                          brandProfileAnalyzed: state.brandProfileAnalyzed || false,
-                          userPrompt: state.userPrompt || ''
-                        }
-                      }));
-                      sessionStorage.removeItem('userState');
+                      dispatchStateRestorationEvent(state);
                     } catch (error) {
                       console.error('Error parsing saved state:', error);
                     }

@@ -117,6 +117,77 @@ export default function Home() {
     });
   }, [isAuthenticated, user, tokens, isLoading]);
 
+  // Restore state from sessionStorage after authentication
+  useEffect(() => {
+    const handleStateRestoration = (event: CustomEvent<any>) => {
+      try {
+        console.log('State restoration event received with data:', event.detail);
+        const state = event.detail;
+        
+        if (!state) {
+          console.warn('Received empty state during restoration');
+          return;
+        }
+        
+        // Restore all relevant app state
+        setUploadedImages(state.uploadedImages || []);
+        setChatHistory(prevHistory => {
+          // Avoid duplicate messages by checking IDs
+          const newMessages = (state.chatHistory || []) as ChatMessage[];
+          const existingIds = new Set(prevHistory.map(msg => msg.id));
+          const uniqueNewMessages = newMessages.filter(msg => !existingIds.has(msg.id));
+          
+          return [...prevHistory, ...uniqueNewMessages];
+        });
+        setBrandProfileAnalyzed(!!state.brandProfileAnalyzed);
+        setUserPrompt(state.userPrompt || '');
+        
+        // Close modals
+        setShowPaywall(false);
+        
+        // Ensure any cached brand analysis results are displayed safely
+        if (state.brandProfileAnalyzed && 
+            state.uploadedImages?.length > 0 && 
+            !chatHistory.some(msg => msg.type === 'result' && msg.content.includes("understand your brand profile"))) {
+          
+          setTimeout(() => {
+            setChatHistory(prev => {
+              // Check again to prevent double-adding during React rendering cycles
+              if (prev.some(msg => msg.type === 'result' && msg.content.includes("understand your brand profile"))) {
+                return prev;
+              }
+              
+              return [
+                ...prev, 
+                {
+                  id: `system-${Date.now()}`,
+                  type: 'result',
+                  content: "I understand your brand profile. Now, tell me what kind of ad you'd like to create.",
+                  timestamp: Date.now(),
+                  messageType: 'text'
+                } as ChatMessage
+              ];
+            });
+          }, 0);
+        }
+        
+        // Clear any saved state
+        sessionStorage.removeItem('userState');
+        
+        console.log('App state restored after authentication');
+      } catch (error) {
+        console.error('Error during state restoration:', error);
+      }
+    };
+
+    // Add event listener for state restoration
+    window.addEventListener('authStateRestored', handleStateRestoration as EventListener);
+
+    return () => {
+      window.removeEventListener('authStateRestored', handleStateRestoration as EventListener);
+    };
+  }, []);
+
   // Show a full-screen loading state until authentication is resolved
   if (isLoading) {
     return (
@@ -126,57 +197,6 @@ export default function Home() {
     );
   }
   
-  // Restore state from sessionStorage after authentication
-  useEffect(() => {
-    const handleStateRestoration = (event: CustomEvent<any>) => {
-      console.log('State restoration event received with data:', event.detail);
-      const state = event.detail;
-      
-      // Restore all relevant app state
-      setUploadedImages(state.uploadedImages || []);
-      setChatHistory(state.chatHistory || []);
-      setBrandProfileAnalyzed(state.brandProfileAnalyzed || false);
-      setUserPrompt(state.userPrompt || '');
-      
-      // Close modals
-      setShowPaywall(false);
-      
-      // Ensure any cached brand analysis results are displayed
-      if (state.brandProfileAnalyzed) {
-        // Add system message to chat history if not already present
-        const hasSystemMessage = chatHistory.some(msg => 
-          msg.type === 'result' && 
-          msg.content.includes("I understand your brand profile")
-        );
-        
-        if (!hasSystemMessage && state.uploadedImages?.length > 0) {
-          setChatHistory(prev => [
-            ...prev, 
-            {
-              id: `system-${Date.now()}`,
-              type: 'result',
-              content: "I understand your brand profile. Now, tell me what kind of ad you'd like to create.",
-              timestamp: Date.now(),
-              messageType: 'text'
-            } as ChatMessage
-          ]);
-        }
-      }
-      
-      // Clear any saved state
-      sessionStorage.removeItem('userState');
-      
-      console.log('App state restored after authentication');
-    };
-
-    // Add event listener for state restoration
-    window.addEventListener('authStateRestored', handleStateRestoration as EventListener);
-
-    return () => {
-      window.removeEventListener('authStateRestored', handleStateRestoration as EventListener);
-    };
-  }, [chatHistory]);
-
   // Save state before showing paywall
   const saveStateAndShowPaywall = () => {
     const currentState = {
