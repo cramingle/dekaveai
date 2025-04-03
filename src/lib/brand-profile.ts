@@ -1,8 +1,8 @@
-import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 import { env } from '@/lib/env';
 
-interface BrandProfile {
+// Brand profile interface
+export interface BrandProfile {
   brandStyle: string;
   colorPalette: string[];
   visualElements: string[];
@@ -11,6 +11,9 @@ interface BrandProfile {
   industryCategory: string;
   timestamp: string;
 }
+
+// Don't initialize OpenAI on the client side
+// This will be handled by the API routes
 
 const BRAND_PROFILE_PROMPT = `Analyze this brand image and extract key brand elements in JSON format with these properties:
 {
@@ -21,11 +24,6 @@ const BRAND_PROFILE_PROMPT = `Analyze this brand image and extract key brand ele
   "targetAudience": "string describing target audience",
   "industryCategory": "string describing industry category"
 }`;
-
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 async function blobUrlToBase64(blobUrl: string): Promise<string> {
   try {
@@ -68,7 +66,7 @@ async function blobUrlToBase64(blobUrl: string): Promise<string> {
 }
 
 /**
- * Extract brand profile from an image using AI vision
+ * Extract brand profile from an image using API
  */
 export async function extractBrandProfile(imageUrl: string): Promise<BrandProfile> {
   try {
@@ -79,66 +77,53 @@ export async function extractBrandProfile(imageUrl: string): Promise<BrandProfil
       throw new Error('Invalid image URL provided');
     }
     
-    // Handle blob URLs properly
+    // Process image URL to base64 if it's a blob URL
+    let processedImageUrl = imageUrl;
     if (imageUrl.startsWith('blob:')) {
-      throw new Error('Blob URLs are not supported at this stage. The image must be converted to base64 first.');
+      console.log('Converting blob URL to base64 for API use');
+      processedImageUrl = await blobUrlToBase64(imageUrl);
     }
     
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: "You are a brand identity expert who analyzes visual brand elements and extracts key characteristics."
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: `Analyze this brand image and extract key brand elements. Focus on:
-1. Overall brand style and aesthetic
-2. Color palette (provide as array of color descriptions)
-3. Key visual elements and symbols (provide as array)
-4. Mood and tone
-5. Target audience indicators
-6. Industry category
-
-Provide the analysis in a structured JSON format matching the BrandProfile interface.`
-            },
-            {
-              type: "image_url",
-              image_url: { url: imageUrl }
-            }
-          ]
-        }
-      ],
-      temperature: 0.5,
-      response_format: { type: "json_object" },
-      max_tokens: 500
+    // Use the API route instead of direct OpenAI calls
+    const response = await fetch('/api/analyze-brand', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        imageUrl: processedImageUrl,
+        prompt: BRAND_PROFILE_PROMPT
+      }),
     });
     
-    // Parse and validate the response
-    const brandProfile = JSON.parse(response.choices[0].message.content || "{}") as BrandProfile;
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to analyze brand: ${response.status} ${errorText}`);
+    }
+    
+    const result = await response.json();
     
     // Validate the extracted profile has required fields
-    if (!brandProfile.brandStyle || !brandProfile.colorPalette || !brandProfile.moodAndTone) {
-      console.warn('Incomplete brand profile extracted:', brandProfile);
+    if (!result.brandStyle || !result.colorPalette || !result.moodAndTone) {
+      console.warn('Incomplete brand profile extracted:', result);
       throw new Error('Incomplete brand profile extracted. Please try again with a clearer brand image.');
     }
     
     // Ensure colorPalette is an array
-    if (!Array.isArray(brandProfile.colorPalette)) {
-      brandProfile.colorPalette = [brandProfile.colorPalette as unknown as string];
+    if (!Array.isArray(result.colorPalette)) {
+      result.colorPalette = [result.colorPalette as unknown as string];
     }
     
     // Ensure visualElements is an array
-    if (!Array.isArray(brandProfile.visualElements)) {
-      brandProfile.visualElements = [brandProfile.visualElements as unknown as string];
+    if (!Array.isArray(result.visualElements)) {
+      result.visualElements = [result.visualElements as unknown as string];
     }
     
     // Add timestamp
-    brandProfile.timestamp = new Date().toISOString();
+    const brandProfile = {
+      ...result,
+      timestamp: new Date().toISOString()
+    };
     
     console.log('Successfully extracted brand profile');
     return brandProfile;
@@ -159,33 +144,27 @@ export async function saveBrandProfile(userId: string, profile: BrandProfile): P
     
     console.log(`Saving brand profile for user ${userId}`);
     
-    // Initialize Supabase client
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
+    // Use API route to save the profile instead of direct Supabase call
+    const response = await fetch('/api/save-brand-profile', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        userId,
+        profile
+      }),
+    });
     
-    // Upsert brand profile for this user
-    const { error } = await supabase
-      .from('user_brand_profiles')
-      .upsert({
-        user_id: userId,
-        profile: profile,
-        updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'user_id'
-      });
-    
-    if (error) {
-      console.error('Error saving brand profile to Supabase:', error);
-      throw error;
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to save brand profile: ${response.status} ${errorText}`);
     }
     
     console.log(`Brand profile saved for user ${userId}`);
   } catch (error) {
     console.error('Error saving brand profile:', error);
     // Log error but don't throw to avoid breaking the user experience
-    // We should still continue even if saving fails
   }
 }
 
@@ -200,28 +179,20 @@ export async function getBrandProfile(userId: string): Promise<BrandProfile | nu
     
     console.log(`Retrieving brand profile for user ${userId}`);
     
-    // Initialize Supabase client
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
+    // Use API route to get the profile instead of direct Supabase call
+    const response = await fetch(`/api/get-brand-profile?userId=${encodeURIComponent(userId)}`);
     
-    // Get brand profile for this user
-    const { data, error } = await supabase
-      .from('user_brand_profiles')
-      .select('profile')
-      .eq('user_id', userId)
-      .single();
-    
-    if (error) {
-      if (error.code === 'PGRST116') {
-        // No profile found for this user
+    if (!response.ok) {
+      if (response.status === 404) {
         console.log(`No brand profile found for user ${userId}`);
         return null;
       }
-      console.error('Error retrieving brand profile from Supabase:', error);
-      throw error;
+      
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to retrieve brand profile: ${response.status} ${errorText}`);
     }
+    
+    const data = await response.json();
     
     if (!data || !data.profile) {
       console.log(`No brand profile found for user ${userId}`);
