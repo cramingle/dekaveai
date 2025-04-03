@@ -36,7 +36,7 @@ function calculateTokenCost(imageUrl: string, prompt: string, isHDQuality?: bool
   return Math.floor(baseCost * promptComplexity);
 }
 
-export const maxDuration = 300; // Set max duration to 300 seconds (5 minutes) for Vercel
+export const maxDuration = 60; // Set max duration to 60 seconds (1 minutes) for Vercel
 export const dynamic = 'force-dynamic'; // Disable static optimization
 
 // Update the POST function with better timeout handling and retries
