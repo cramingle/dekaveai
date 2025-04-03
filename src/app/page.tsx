@@ -136,7 +136,33 @@ export default function Home() {
   // Add local token state to track changes
   const [localTokens, setLocalTokens] = useState<number>(tokens);
   
+  // Create a more stable ref for the file input
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Ensure file input exists
+  useEffect(() => {
+    // This effect should run once after handleImageUpload is defined
+    if (!fileInputRef.current) {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.multiple = true;
+      input.style.display = 'none';
+      input.addEventListener('change', handleImageUpload as any);
+      document.body.appendChild(input);
+      
+      // Store reference
+      fileInputRef.current = input;
+      
+      // Cleanup function
+      return () => {
+        if (fileInputRef.current) {
+          fileInputRef.current.removeEventListener('change', handleImageUpload as any);
+          document.body.removeChild(fileInputRef.current);
+        }
+      };
+    }
+  }, []);  // We'll leave dependency array empty and use a separate solution
   
   // Initialize and sync local tokens with auth tokens
   useEffect(() => {
@@ -907,9 +933,42 @@ export default function Home() {
                     />
                     
                     <button 
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => {
+                        console.log('Upload button clicked. States:', {
+                          isGenerating,
+                          isAnalyzingBrand,
+                          brandProfileAnalyzed,
+                          hasImages: uploadedImages.length > 0,
+                          chatStarted,
+                          fileInputRef: !!fileInputRef.current
+                        });
+                        
+                        // Ensure file input exists
+                        if (fileInputRef.current) {
+                          fileInputRef.current.click();
+                        } else {
+                          // Create a temporary input if ref is null
+                          console.log('Creating temporary file input element');
+                          const tempInput = document.createElement('input');
+                          tempInput.type = 'file';
+                          tempInput.accept = 'image/*';
+                          tempInput.multiple = true;
+                          tempInput.style.display = 'none';
+                          
+                          // Add change listener
+                          tempInput.addEventListener('change', (e) => {
+                            handleImageUpload(e as any);
+                            // Clean up
+                            document.body.removeChild(tempInput);
+                          }, { once: true });
+                          
+                          // Add to DOM and trigger click
+                          document.body.appendChild(tempInput);
+                          tempInput.click();
+                        }
+                      }}
                       className="rounded-full bg-zinc-800/80 backdrop-blur-sm w-8 h-8 flex items-center justify-center hover:bg-zinc-700/80 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      disabled={isGenerating || isAnalyzingBrand}
+                      disabled={isGenerating}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
@@ -1118,15 +1177,6 @@ export default function Home() {
                   </div>
                 )}
                 
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  className="hidden" 
-                  accept="image/*" 
-                  multiple
-                  onChange={handleImageUpload}
-                />
-                
                 <button 
                   onClick={() => {
                     console.log('Upload button clicked. States:', {
@@ -1137,7 +1187,30 @@ export default function Home() {
                       chatStarted,
                       fileInputRef: !!fileInputRef.current
                     });
-                    fileInputRef.current?.click();
+                    
+                    // Ensure file input exists
+                    if (fileInputRef.current) {
+                      fileInputRef.current.click();
+                    } else {
+                      // Create a temporary input if ref is null
+                      console.log('Creating temporary file input element');
+                      const tempInput = document.createElement('input');
+                      tempInput.type = 'file';
+                      tempInput.accept = 'image/*';
+                      tempInput.multiple = true;
+                      tempInput.style.display = 'none';
+                      
+                      // Add change listener
+                      tempInput.addEventListener('change', (e) => {
+                        handleImageUpload(e as any);
+                        // Clean up
+                        document.body.removeChild(tempInput);
+                      }, { once: true });
+                      
+                      // Add to DOM and trigger click
+                      document.body.appendChild(tempInput);
+                      tempInput.click();
+                    }
                   }}
                   className="rounded-full bg-zinc-800/80 backdrop-blur-sm w-8 h-8 flex items-center justify-center hover:bg-zinc-700/80 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={isGenerating}
