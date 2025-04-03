@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@auth/supabase-adapter": "^1.8.0",
+    "@fingerprintjs/fingerprintjs": "^4.6.1",
     "@next-auth/supabase-adapter": "^0.2.1",
     "@stripe/stripe-js": "^3.0.10",
     "@supabase/auth-helpers-nextjs": "latest",

@@ -7,8 +7,10 @@ import {
   useEffect,
   ReactNode
 } from 'react';
-// import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase/client';
+import { getUserTokens } from '@/lib/supabase';
 import { trackEvent, EventType } from '@/lib/analytics';
+import { getDeviceFingerprint, getPersistentUserId } from '@/lib/fingerprint';
 
 // Add interface for extended user
 interface ExtendedUser {
@@ -42,9 +44,10 @@ type UserAuth = {
 // Create the auth context
 const AuthContext = createContext<UserAuth | undefined>(undefined);
 
-// Function to generate a unique identifier
-const generateUniqueId = () => {
-  return 'user_' + Math.random().toString(36).substring(2, 15);
+// Update the generateUniqueId function to be more persistent
+const generateUniqueId = async (): Promise<string> => {
+  // Get fingerprint-based persistent ID
+  return await getPersistentUserId();
 };
 
 // Function to check if tokens should be refreshed
@@ -133,9 +136,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Initialize the temporary user on first load
   useEffect(() => {
     let isMounted = true;
-    console.log('Setting up temporary user system');
+    console.log('Setting up temporary user system with device fingerprinting');
     
-    const initializeTemporaryUser = () => {
+    const initializeTemporaryUser = async () => {
       try {
         // Check localStorage for existing user
         const storedUser = localStorage.getItem('dekave_temp_user');
@@ -148,6 +151,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           lastTokenRefresh = parsedUser.lastTokenRefresh;
           console.log('Found existing temporary user:', userId);
           
+          // Validate against fingerprint to prevent bypassing by clearing localStorage
+          // Get the current device fingerprint and create a persistent ID
+          const persistentId = await getPersistentUserId(userId);
+          
+          // If the user ID doesn't match our fingerprint pattern, it might be spoofed
+          // In that case, generate a new ID based on the device fingerprint
+          if (!userId.includes(persistentId.split('-')[1])) {
+            console.log('User ID mismatch with device fingerprint, creating new ID');
+            userId = persistentId;
+            lastTokenRefresh = new Date().toISOString();
+          }
+          
           // Check if tokens should be refreshed
           if (shouldRefreshTokens(lastTokenRefresh)) {
             console.log('Refreshing tokens for temporary user');
@@ -155,6 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             localStorage.setItem('dekave_temp_user', JSON.stringify({
               id: userId,
               lastTokenRefresh,
+              fingerprint: persistentId.split('-')[1] // Store fingerprint part for validation
             }));
             
             // Reset tokens to maximum
@@ -167,15 +183,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           }
         } else {
-          // Generate new user
-          userId = generateUniqueId();
+          // Generate new user with fingerprint-based ID
+          userId = await generateUniqueId();
           lastTokenRefresh = new Date().toISOString();
-          console.log('Created new temporary user:', userId);
+          console.log('Created new fingerprint-based temporary user:', userId);
           
-          // Store in localStorage
+          // Store in localStorage with fingerprint info
           localStorage.setItem('dekave_temp_user', JSON.stringify({
             id: userId,
             lastTokenRefresh,
+            fingerprint: userId.split('-')[1] // Store fingerprint part for validation
           }));
           
           // Default tokens
@@ -640,10 +657,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Function to refresh token count
+  // Update token refresh to validate against fingerprint
   const refreshTokenCount = async () => {
-    // In free mode, just return current token count
-    return Promise.resolve();
+    try {
+      // For temporary users, check fingerprint to prevent abuse
+      if (user && user.id.startsWith('user-')) {
+        const persistentId = await getPersistentUserId(user.id);
+        const fingerprintPart = persistentId.split('-')[1];
+        
+        // Get tokens from localStorage, but verify against fingerprint
+        const storedUser = localStorage.getItem('dekave_temp_user');
+        if (storedUser) {
+          const parsedUser = JSON.parse(storedUser);
+          
+          // If fingerprint doesn't match, token count might be tampered
+          if (parsedUser.fingerprint !== fingerprintPart) {
+            console.warn('Fingerprint mismatch detected during token refresh');
+            // Reset to default token count to prevent abuse
+            setTokens(10000); // Lower amount for suspected tampering
+            localStorage.setItem('dekave_temp_tokens', '10000');
+            return;
+          }
+          
+          // Valid user, proceed with token refresh
+          const tokensFromStorage = localStorage.getItem('dekave_temp_tokens');
+          if (tokensFromStorage) {
+            setTokens(parseInt(tokensFromStorage, 10));
+          }
+        }
+      } else if (user) {
+        // For regular logged-in users, get from database
+        const tokens = await getUserTokens(user.id);
+        if (tokens !== null) {
+          setTokens(tokens);
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing token count:', error);
+    }
   };
 
   // Function to buy tokens - not needed in free mode, but stub to prevent errors
