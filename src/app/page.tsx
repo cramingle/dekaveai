@@ -168,80 +168,53 @@ export default function Home() {
           return;
         }
 
-        // Process state updates in a more reliable way
-        const updates = [];
-        
-        if (state.chatStarted !== undefined) {
-          updates.push(() => setChatStarted(state.chatStarted!));
-        }
-        
-        if (state.isLoadingResponse !== undefined) {
-          updates.push(() => setIsLoadingResponse(state.isLoadingResponse!));
-        }
-        
-        if (state.chatHistory) {
-          updates.push(() => 
-            setChatHistory(prevHistory => {
-              // Make a defensive copy
-              const currentHistory = [...prevHistory];
-              const existingIds = new Set(currentHistory.map(msg => msg.id));
-              const newMessages = (state.chatHistory || []).filter(msg => !existingIds.has(msg.id));
-              
-              if (newMessages.length === 0) {
-                console.log('No new messages to add to chat history');
-                return currentHistory;
-              }
-              
-              console.log(`Adding ${newMessages.length} messages to chat history`);
-              return [...currentHistory, ...newMessages];
-            })
-          );
-        }
-        
-        if (state.uploadedImages) {
-          updates.push(() => setUploadedImages(state.uploadedImages || []));
-        }
-        
-        if (state.brandProfileAnalyzed !== undefined) {
-          updates.push(() => setBrandProfileAnalyzed(!!state.brandProfileAnalyzed));
-        }
-        
-        if (state.userPrompt !== undefined) {
-          updates.push(() => setUserPrompt(state.userPrompt || ''));
-        }
-        
-        // Execute all state updates sequentially with slight delays to prevent React batching issues
-        let delay = 0;
-        updates.forEach((update, index) => {
-          setTimeout(() => {
-            if (mounted) {
-              update();
+        // Batch all state updates in a setTimeout to avoid React errors
+        setTimeout(() => {
+          if (!mounted) return;
+          
+          // Apply all updates within a single batch to prevent partial state issues
+          try {
+            // Apply state updates in a fixed order
+            if (state.chatStarted !== undefined) setChatStarted(state.chatStarted);
+            if (state.isLoadingResponse !== undefined) setIsLoadingResponse(state.isLoadingResponse);
+            if (state.uploadedImages) setUploadedImages(state.uploadedImages || []);
+            if (state.brandProfileAnalyzed !== undefined) setBrandProfileAnalyzed(!!state.brandProfileAnalyzed);
+            if (state.userPrompt !== undefined) setUserPrompt(state.userPrompt || '');
+            
+            // Complex state that might need merging
+            if (state.chatHistory) {
+              setChatHistory(prevHistory => {
+                const currentHistory = [...prevHistory];
+                const existingIds = new Set(currentHistory.map(msg => msg.id));
+                const newMessages = (state.chatHistory || []).filter(msg => !existingIds.has(msg.id));
+                
+                if (newMessages.length === 0) return currentHistory;
+                return [...currentHistory, ...newMessages];
+              });
+            }
+            
+            // Final update - always set this regardless of state
+            setShowPaywall(false);
+            
+            console.log('State restoration complete');
+          } catch (err) {
+            console.error('Error applying state updates:', err);
           }
-        }, delay);
-        delay += 20; // Small delay between updates
-      });
-      
-      // Final update - close modals
-      setTimeout(() => {
-        if (mounted) {
-          setShowPaywall(false);
-        }
-      }, delay + 50);
-      
-    } catch (error) {
-      console.error('Error handling state restoration:', error);
-    }
-  };
+        }, 0);
+      } catch (error) {
+        console.error('Error handling state restoration:', error);
+      }
+    };
 
-  // Add event listener for state restoration
-  window.addEventListener('restoreState', handleStateRestoration as EventListener);
+    // Add event listener for state restoration
+    window.addEventListener('restoreState', handleStateRestoration as EventListener);
 
-  // Clean up the event listener
-  return () => {
-    mounted = false;
-    window.removeEventListener('restoreState', handleStateRestoration as EventListener);
-  };
-}, [isAuthenticated, user]); // Only depend on auth state
+    // Clean up the event listener
+    return () => {
+      mounted = false;
+      window.removeEventListener('restoreState', handleStateRestoration as EventListener);
+    };
+  }, [isAuthenticated, user]); // Only depend on auth state
 
   // Show a full-screen loading state until authentication is resolved
   if (isLoading) {

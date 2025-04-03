@@ -63,28 +63,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       console.log('Dispatching state restoration event with state:', state);
       
-      // Use standard DOM event for better cross-browser compatibility
-      const event = new CustomEvent('restoreState', { 
-        detail: state,
-        bubbles: true, 
-        cancelable: true 
-      });
+      // Create a stable copy of the state - prevent reference issues
+      const stableCopy = JSON.parse(JSON.stringify(state));
       
-      // Use queueMicrotask for more predictable timing
-      queueMicrotask(() => {
+      // Use a more reliable approach for dispatching events
+      setTimeout(() => {
         try {
+          const event = new CustomEvent('restoreState', { 
+            detail: stableCopy,
+            bubbles: true, 
+            cancelable: true 
+          });
+          
           window.dispatchEvent(event);
           
           // Clean up the saved state to prevent duplicate restoration
-          // This must happen after the event is dispatched
           setTimeout(() => {
-            sessionStorage.removeItem('userState');
-            console.log('Cleaned up sessionStorage after state restoration');
-          }, 1000); // Add a delay to ensure the event has been processed
+            try {
+              sessionStorage.removeItem('userState');
+              console.log('Cleaned up sessionStorage after state restoration');
+            } catch (err) {
+              console.error('Error cleaning sessionStorage:', err);
+            }
+          }, 1000);
         } catch (error) {
           console.error('Error dispatching state restoration event:', error);
         }
-      });
+      }, 50); // Small delay to ensure React has completed rendering
     } catch (error) {
       console.error('Failed to create state restoration event:', error);
     }
@@ -166,13 +171,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     try {
                       const state = JSON.parse(savedState);
                       
-                      // Use requestAnimationFrame to ensure DOM is updated
-                      requestAnimationFrame(() => {
-                        // Then use setTimeout to ensure React has processed state updates
-                        setTimeout(() => {
-                          if (isMounted) dispatchStateRestorationEvent(state);
-                        }, 100);
-                      });
+                      // Use a single consistent approach with setTimeout
+                      setTimeout(() => {
+                        if (isMounted) dispatchStateRestorationEvent(state);
+                      }, 200);
                     } catch (error) {
                       console.error('Error parsing saved state after redirect:', error);
                     }
@@ -248,13 +250,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 try {
                   const state = JSON.parse(savedState);
                   
-                  // Use requestAnimationFrame to ensure DOM is updated
-                  requestAnimationFrame(() => {
-                    // Then use setTimeout to ensure React has processed state updates
-                    setTimeout(() => {
-                      if (isMounted) dispatchStateRestorationEvent(state);
-                    }, 100);
-                  });
+                  // Use a single consistent approach with setTimeout
+                  setTimeout(() => {
+                    if (isMounted) dispatchStateRestorationEvent(state);
+                  }, 200);
                 } catch (error) {
                   console.error('Error parsing saved state after redirect:', error);
                 }
@@ -331,11 +330,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   if (savedState) {
                     try {
                       const state = JSON.parse(savedState);
-                      requestAnimationFrame(() => {
-                        setTimeout(() => {
-                          if (isMounted) dispatchStateRestorationEvent(state);
-                        }, 100);
-                      });
+                      setTimeout(() => {
+                        if (isMounted) dispatchStateRestorationEvent(state);
+                      }, 200);
                     } catch (error) {
                       console.error('Error parsing saved state:', error);
                     }
@@ -374,11 +371,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               if (savedState) {
                 try {
                   const state = JSON.parse(savedState);
-                  requestAnimationFrame(() => {
-                    setTimeout(() => {
-                      if (isMounted) dispatchStateRestorationEvent(state);
-                    }, 100);
-                  });
+                  setTimeout(() => {
+                    if (isMounted) dispatchStateRestorationEvent(state);
+                  }, 200);
                 } catch (error) {
                   console.error('Error parsing saved state:', error);
                 }
