@@ -9,7 +9,6 @@ import {
 } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { trackEvent, EventType } from '@/lib/analytics';
-import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 
 // Add interface for extended user
 interface ExtendedUser {
@@ -148,21 +147,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }, 10000); // 10 seconds maximum loading time
 
+    // Add this function inside the useEffect where isMounted is defined
+    const forceCheckSession = async () => {
+      try {
+        console.log('Directly checking for an active session');
+        const { data, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Error getting session:', error);
+          return null;
+        }
+        
+        if (data.session) {
+          console.log('Active session found for user:', data.session.user.id);
+          return data.session;
+        } else {
+          console.log('No active session found in direct check');
+          return null;
+        }
+      } catch (e) {
+        console.error('Exception during session check:', e);
+        return null;
+      }
+    };
+
     console.log('Setting up auth state listener');
 
     // Set up auth change handler BEFORE initializing the session
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state changed:', event);
+        console.log('Auth state changed:', event, 'Session:', session ? `${session.user.id} (${session.user.email})` : 'null');
         authStateChanged = true;
 
         // Important: Process the auth state immediately
         try {
           if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
-            console.log('User session detected:', session?.user?.id);
+            // Check if session is null or user is undefined
+            if (!session || !session.user) {
+              console.warn('Auth event received but session or user is null:', event);
+              logAuthState('Auth event with null session');
+              
+              // Try to get the session directly as a fallback
+              const fallbackSession = await forceCheckSession();
+              if (fallbackSession && fallbackSession.user) {
+                console.log('Retrieved session through fallback:', fallbackSession.user.id);
+                session = fallbackSession; // Use the fallback session
+              } else {
+                console.log('No session available even with fallback');
+                if (isMounted) setIsLoading(false);
+                return;
+              }
+            }
+            
+            console.log('User session detected:', session.user.id);
             logAuthState('User session detected');
             
-            if (session?.user && isMounted) {
+            if (session.user && isMounted) {
               // Get user data from database
               const { data: userData, error } = await supabase
                 .from('users')
@@ -310,7 +350,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const checkSession = async () => {
       logAuthState('Initial auth state check');
       try {
-        // Check if we have a code in the URL
+        // First directly check for a session
+        const currentSession = await forceCheckSession();
+        
+        if (currentSession && currentSession.user) {
+          console.log('Found active session for:', currentSession.user.id);
+          
+          // Get user data from database directly
+          const { data: userData, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', currentSession.user.id)
+            .single();
+          
+          if (error) {
+            console.error('Error fetching user data in checkSession:', error);
+          } else if (userData && isMounted) {
+            console.log('Forcefully setting authenticated state to true with user data');
+            
+            setUser({
+              id: currentSession.user.id,
+              email: currentSession.user.email!,
+              tokens: userData.tokens || 0,
+              tier: userData.tier || 'Pioneer',
+              tokens_expiry_date: userData.tokens_expiry_date,
+              hasLoggedInBefore: ((userData.tokens ?? 0) > 0 || !!userData.tokens_expiry_date),
+              hasStoredConversation: !!userData.conversation_last_used,
+              conversationLastUsed: userData.conversation_last_used,
+              token: currentSession.access_token,
+              stripeCustomerId: userData.stripe_customer_id
+            });
+            setTokens(userData.tokens || 0);
+            setTokensExpiryDate(userData.tokens_expiry_date);
+            setTier(userData.tier || 'Pioneer');
+            setIsAuthenticated(true);
+            
+            // Store in localStorage
+            localStorage.setItem('dekave_user', JSON.stringify({
+              id: currentSession.user.id,
+              email: currentSession.user.email,
+              isAuthenticated: true
+            }));
+            
+            if (isMounted) setIsLoading(false);
+            
+            // Notify components about auth state change
+            notifyAuthStateChanged();
+          }
+        }
+        
+        // Proceed with the normal check for URL code parameter
         const params = new URLSearchParams(window.location.search);
         const hasAuthCode = params.has('code');
         logAuthState('Checking for auth code');

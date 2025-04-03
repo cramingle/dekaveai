@@ -144,6 +144,22 @@ export default function Home() {
       tokens, 
       isLoading 
     });
+    
+    // Check localStorage for cached auth as a backup
+    if (!isAuthenticated && !isLoading) {
+      try {
+        const cachedUser = localStorage.getItem('dekave_user');
+        if (cachedUser) {
+          const parsedUser = JSON.parse(cachedUser);
+          console.log('Found cached user authentication:', parsedUser);
+          
+          // Force reload to restore authentication
+          window.location.reload();
+        }
+      } catch (e) {
+        console.error('Error checking cached auth:', e);
+      }
+    }
   }, [isAuthenticated, user, tokens, isLoading]);
 
   // Listen for state restoration events
