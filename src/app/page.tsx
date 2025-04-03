@@ -443,9 +443,19 @@ export default function Home() {
     if (!brandProfileAnalyzed && newImages.length > 0) {
       setIsAnalyzingBrand(true);
       const profile = await extractBrandProfile(newImages[0].url);
-      if (profile && user?.id) {
-        await saveBrandProfile(user.id, profile);
+      
+      // In free mode, user might be available or might be temporary
+      const userId = user?.id || localStorage.getItem('dekave_temp_user') 
+        ? JSON.parse(localStorage.getItem('dekave_temp_user') || '{}').id
+        : null;
+        
+      if (profile && userId) {
+        await saveBrandProfile(userId, profile);
+      } else if (profile) {
+        // If we can't save the profile, just continue without saving
+        console.log('Brand profile analyzed but not saved due to missing user ID');
       }
+      
       setIsAnalyzingBrand(false);
       setBrandProfileAnalyzed(true);
       

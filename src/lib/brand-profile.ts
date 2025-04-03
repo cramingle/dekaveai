@@ -73,6 +73,16 @@ export async function extractBrandProfile(imageUrl: string) {
 
 export async function saveBrandProfile(userId: string, profile: BrandProfile): Promise<boolean> {
   try {
+    // In free mode, save to localStorage instead of Supabase
+    localStorage.setItem(`dekave_brand_profile_${userId}`, JSON.stringify({
+      user_id: userId,
+      profile_data: profile,
+      updated_at: new Date().toISOString(),
+    }));
+    
+    return true;
+    
+    /* Original Supabase code, commented out for free mode
     const supabase = createClient();
     const { error } = await supabase
       .from('brand_profiles')
@@ -84,6 +94,7 @@ export async function saveBrandProfile(userId: string, profile: BrandProfile): P
 
     if (error) throw error;
     return true;
+    */
   } catch (error) {
     console.error('Error saving brand profile:', error);
     return false;
@@ -92,6 +103,15 @@ export async function saveBrandProfile(userId: string, profile: BrandProfile): P
 
 export async function getBrandProfile(userId: string): Promise<BrandProfile | null> {
   try {
+    // In free mode, retrieve from localStorage instead of Supabase
+    const savedProfile = localStorage.getItem(`dekave_brand_profile_${userId}`);
+    if (savedProfile) {
+      const data = JSON.parse(savedProfile);
+      return data.profile_data || null;
+    }
+    return null;
+    
+    /* Original Supabase code, commented out for free mode
     const supabase = createClient();
     const { data, error } = await supabase
       .from('brand_profiles')
@@ -101,6 +121,7 @@ export async function getBrandProfile(userId: string): Promise<BrandProfile | nu
 
     if (error) throw error;
     return data?.profile_data || null;
+    */
   } catch (error) {
     console.error('Error getting brand profile:', error);
     return null;
