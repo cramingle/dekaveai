@@ -506,7 +506,10 @@ export default function Home() {
     return 5000;
   };
 
-  // Update handleImageUpload to deduct tokens for brand analysis
+  // Add a new state for staged images (images waiting to be sent with prompt)
+  const [stagedImage, setStagedImage] = useState<string | null>(null);
+
+  // Modify handleImageUpload to handle both brand images and product images
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       const files = Array.from(e.target.files || []);
@@ -518,62 +521,67 @@ export default function Home() {
         size: file.size
       }));
       
-      setUploadedImages(prev => [...prev, ...newImages.map(img => img.url)]);
-      setShowDropzone(false);
-      
-      // Analyze brand profile if this is the first image
-      if (!brandProfileAnalyzed && newImages.length > 0) {
-        setIsAnalyzingBrand(true);
+      // If brand profile is not analyzed yet, proceed with brand analysis
+      if (!brandProfileAnalyzed) {
+        setUploadedImages(prev => [...prev, ...newImages.map(img => img.url)]);
+        setShowDropzone(false);
         
-        // Calculate and deduct tokens for brand analysis
-        const brandAnalysisTokens = calculateBrandAnalysisTokens();
-        deductTokens(brandAnalysisTokens);
-        
-        try {
-          const profile = await extractBrandProfile(newImages[0].url);
+        // Analyze brand profile for the first image
+        if (newImages.length > 0) {
+          setIsAnalyzingBrand(true);
           
-          // In free mode, user might be available or might be temporary
-          const userId = user?.id || localStorage.getItem('dekave_temp_user') 
-            ? JSON.parse(localStorage.getItem('dekave_temp_user') || '{}').id
-            : null;
+          // Calculate and deduct tokens for brand analysis
+          const brandAnalysisTokens = calculateBrandAnalysisTokens();
+          deductTokens(brandAnalysisTokens);
+          
+          try {
+            const profile = await extractBrandProfile(newImages[0].url);
             
-          if (profile && userId) {
-            await saveBrandProfile(userId, profile);
-          } else if (profile) {
-            // If we can't save the profile, just continue without saving
-            console.log('Brand profile analyzed but not saved due to missing user ID');
+            // In free mode, user might be available or might be temporary
+            const userId = user?.id || localStorage.getItem('dekave_temp_user') 
+              ? JSON.parse(localStorage.getItem('dekave_temp_user') || '{}').id
+              : null;
+              
+            if (profile && userId) {
+              await saveBrandProfile(userId, profile);
+            } else if (profile) {
+              // If we can't save the profile, just continue without saving
+              console.log('Brand profile analyzed but not saved due to missing user ID');
+            }
+            
+            // Add system message to chat history
+            setChatHistory(prev => [...prev, {
+              id: `system-${Date.now()}`,
+              type: 'result',
+              content: "I understand your brand profile. Now, tell me what kind of ad you'd like to create.",
+              timestamp: Date.now(),
+              messageType: 'text'
+            } as ChatMessage]);
+          } catch (error) {
+            console.error('Error analyzing brand profile:', error);
+            setChatHistory(prev => [...prev, {
+              id: `error-${Date.now()}`,
+              type: 'result',
+              content: "Sorry, there was an error analyzing your brand profile. You can still continue.",
+              timestamp: Date.now(),
+              messageType: 'text'
+            } as ChatMessage]);
+          } finally {
+            // Always ensure we reset states even if there's an error
+            setIsAnalyzingBrand(false);
+            setBrandProfileAnalyzed(true);
+            setIsGenerating(false);
           }
-          
-          // Add system message to chat history
-          setChatHistory(prev => [...prev, {
-            id: `system-${Date.now()}`,
-            type: 'result',
-            content: "I understand your brand profile. Now, tell me what kind of ad you'd like to create.",
-            timestamp: Date.now(),
-            messageType: 'text'
-          } as ChatMessage]);
-        } catch (error) {
-          console.error('Error analyzing brand profile:', error);
-          setChatHistory(prev => [...prev, {
-            id: `error-${Date.now()}`,
-            type: 'result',
-            content: "Sorry, there was an error analyzing your brand profile. You can still continue.",
-            timestamp: Date.now(),
-            messageType: 'text'
-          } as ChatMessage]);
-        } finally {
-          // Always ensure we reset states even if there's an error
-          setIsAnalyzingBrand(false);
-          setBrandProfileAnalyzed(true);
-          setIsGenerating(false);
         }
+        
+        // Set chat started to true
+        setChatStarted(true);
+      } else {
+        // Brand is already analyzed, so stage the image for prompt submission
+        console.log('Staging image for prompt submission');
+        // Use only the first image if multiple are selected
+        setStagedImage(newImages[0].url);
       }
-      
-      // Reset generation state to ensure upload button is enabled
-      setIsGenerating(false);
-      
-      // Set chat started to true
-      setChatStarted(true);
       
       // Track image upload event
       trackEvent(EventType.IMAGE_UPLOAD, {
@@ -675,11 +683,12 @@ export default function Home() {
     });
   };
   
+  // Update handlePromptSubmit to handle staged images
   const handlePromptSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // No need to check tokens, always have enough
-    if (!userPrompt.trim()) return;
+    // If no prompt and no staged image, do nothing
+    if (!userPrompt.trim() && !stagedImage) return;
     
     try {
       // Calculate token cost for this operation
@@ -690,20 +699,37 @@ export default function Home() {
       
       setIsGenerating(true);
       
-      // Add prompt to chat history
-      setChatHistory(prev => [...prev, {
-        id: `prompt-${Date.now()}`,
-        type: 'prompt',
-        content: editingContext.isEditing ? `Edit: ${userPrompt}` : userPrompt,
-        timestamp: Date.now(),
-        messageType: 'text'
-      } as ChatMessage]);
+      // If there's a staged image, add it to uploadedImages now
+      if (stagedImage) {
+        setUploadedImages(prev => [...prev, stagedImage]);
+        
+        // Add staged image to chat history
+        setChatHistory(prev => [...prev, {
+          id: `image-${Date.now()}`,
+          type: 'prompt',
+          content: stagedImage,
+          timestamp: Date.now(),
+          messageType: 'image'
+        } as ChatMessage]);
+      }
+      
+      // Add text prompt to chat history if there is one
+      if (userPrompt.trim()) {
+        setChatHistory(prev => [...prev, {
+          id: `prompt-${Date.now()}`,
+          type: 'prompt',
+          content: editingContext.isEditing ? `Edit: ${userPrompt}` : userPrompt,
+          timestamp: Date.now(),
+          messageType: 'text'
+        } as ChatMessage]);
+      }
       
       // Store current prompt before clearing
       const currentPrompt = userPrompt;
       
-      // Clear the input after submission
+      // Clear the input and staged image after submission
       setUserPrompt('');
+      setStagedImage(null);
       
       // Make actual API call with user's temporary ID
       const response = await fetch('/api/generate', {
@@ -712,7 +738,8 @@ export default function Home() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          imageUrl: uploadedImages[0],
+          // Use either the staged image or the first uploaded image
+          imageUrl: stagedImage || uploadedImages[0],
           prompt: currentPrompt,
           userId: user?.id || (localStorage.getItem('dekave_temp_user') ? 
             JSON.parse(localStorage.getItem('dekave_temp_user') || '{}').id : 'temp_user'),
@@ -832,6 +859,29 @@ export default function Home() {
     
     return null;
   }
+
+  // Add a component to show staged image in the textarea
+  const StagedImagePreview = () => {
+    if (!stagedImage) return null;
+    
+    return (
+      <div className="relative mt-2 mb-3 rounded-lg overflow-hidden border border-white/20">
+        <img 
+          src={stagedImage} 
+          alt="Staged image" 
+          className="w-full max-h-40 object-cover"
+        />
+        <button
+          onClick={() => setStagedImage(null)}
+          className="absolute top-2 right-2 bg-black/70 hover:bg-black/90 text-white rounded-full p-1"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+          </svg>
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div 
@@ -1178,15 +1228,20 @@ export default function Home() {
             )}
             
             <div className="relative rounded-2xl bg-zinc-900/50 backdrop-blur-sm border border-white/10 overflow-hidden">
+              {/* Staged Image Preview */}
+              <StagedImagePreview />
+              
               <textarea
                 value={userPrompt}
                 onChange={(e) => setUserPrompt(e.target.value)}
                 placeholder={
-                  editingContext.isEditing
-                    ? "Describe how you'd like to modify this image..."
-                    : brandProfileAnalyzed 
-                      ? "Describe the ad you want to create..." 
-                      : "Upload a brand image to begin..."
+                  stagedImage 
+                    ? "Describe what kind of ad you want with this image..." 
+                    : editingContext.isEditing
+                      ? "Describe how you'd like to modify this image..."
+                      : brandProfileAnalyzed 
+                        ? "Describe the ad you want to create..." 
+                        : "Upload a brand image to begin..."
                 }
                 className="w-full bg-transparent border-none px-6 py-4 text-white placeholder-zinc-500 focus:outline-none resize-none"
                 style={{minHeight: '56px'}}
@@ -1256,7 +1311,7 @@ export default function Home() {
                 
                 <button 
                   onClick={(e) => handlePromptSubmit(e)}
-                  disabled={!userPrompt.trim() || !uploadedImages.length || isGenerating}
+                  disabled={(!userPrompt.trim() && !stagedImage) || !uploadedImages.length || isGenerating}
                   className="rounded-full bg-white text-black w-8 h-8 flex items-center justify-center hover:bg-gray-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
