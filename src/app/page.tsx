@@ -87,6 +87,46 @@ interface AppState {
   userPrompt?: string;
 }
 
+async function blobUrlToBase64(blobUrl: string): Promise<string> {
+  try {
+    // Check if it's a blob URL
+    if (!blobUrl.startsWith('blob:')) {
+      console.log('Not a blob URL, returning as is:', blobUrl.substring(0, 30) + '...');
+      return blobUrl;
+    }
+    
+    console.log('Converting blob URL to base64:', blobUrl.substring(0, 30) + '...');
+    
+    // Try to fetch the blob
+    const response = await fetch(blobUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch blob: ${response.status} ${response.statusText}`);
+    }
+    
+    const blob = await response.blob();
+    
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          console.log('Successfully converted blob to base64 data URL');
+          resolve(reader.result);
+        } else {
+          reject(new Error('FileReader did not return a string'));
+        }
+      };
+      reader.onerror = (err) => {
+        console.error('FileReader error:', err);
+        reject(new Error('FileReader error: ' + (err.target as any)?.error?.message || 'Unknown error'));
+      };
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error('Error converting blob to base64:', error);
+    throw new Error(`Failed to convert image URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
 export default function Home() {
   const { user, isLoading, tokens, isAuthenticated, refreshTokenCount } = useAuth();
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
@@ -655,7 +695,7 @@ export default function Home() {
     });
   };
   
-  // Update handlePromptSubmit to handle staged images
+  // Modify the handlePromptSubmit function to convert blob URLs to base64
   const handlePromptSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -672,6 +712,8 @@ export default function Home() {
       setIsGenerating(true);
       
       // If there's a staged image, add it to the chat history but not to uploadedImages again
+      let processedImageUrl;
+      
       if (stagedImage) {
         // Check if this image is already in uploadedImages to prevent duplication
         if (!uploadedImages.includes(stagedImage)) {
@@ -724,6 +766,16 @@ export default function Home() {
       setUserPrompt('');
       setStagedImage(null);
       
+      // Convert the image URL to base64 before sending to API
+      try {
+        const imageToUse = stagedImage || uploadedImages[0];
+        processedImageUrl = await blobUrlToBase64(imageToUse);
+        console.log('Image prepared for API:', processedImageUrl.substring(0, 30) + '...');
+      } catch (conversionError) {
+        console.error('Error converting image for API:', conversionError);
+        throw new Error('Failed to process image for generation');
+      }
+      
       // Make actual API call with user's temporary ID
       const response = await fetch('/api/generate', {
         method: 'POST',
@@ -731,8 +783,7 @@ export default function Home() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          // Use either the staged image or the first uploaded image
-          imageUrl: stagedImage || uploadedImages[0],
+          imageUrl: processedImageUrl,
           prompt: currentPrompt,
           userId: user?.id || (localStorage.getItem('dekave_temp_user') ? 
             JSON.parse(localStorage.getItem('dekave_temp_user') || '{}').id : 'temp_user'),
@@ -1115,7 +1166,11 @@ export default function Home() {
                           <div className="bg-zinc-800 rounded-2xl rounded-tr-sm px-6 py-4 max-w-[80%]" style={{ 
                             maxWidth: windowWidth < 640 ? '85%' : '350px' 
                           }}>
-                            <p className="text-white">{item.content}</p>
+                            {item.messageType === 'text' ? (
+                              <p className="text-white">{item.content}</p>
+                            ) : (
+                              <img src={item.content} alt="User uploaded" className="rounded-lg w-full max-h-[250px] object-contain" />
+                            )}
                           </div>
                         </div>
                       ) : (
