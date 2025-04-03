@@ -76,7 +76,7 @@ interface EditingContext {
 }
 
 export default function Home() {
-  const { user, isLoading, tokens } = useAuth();
+  const { user, isLoading, tokens, isAuthenticated } = useAuth();
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [brandProfileAnalyzed, setBrandProfileAnalyzed] = useState(false);
@@ -110,15 +110,44 @@ export default function Home() {
   // Restore state from sessionStorage after authentication
   useEffect(() => {
     const handleStateRestoration = (event: CustomEvent<any>) => {
+      console.log('State restoration event received with data:', event.detail);
       const state = event.detail;
+      
+      // Restore all relevant app state
       setUploadedImages(state.uploadedImages || []);
       setChatHistory(state.chatHistory || []);
       setBrandProfileAnalyzed(state.brandProfileAnalyzed || false);
       setUserPrompt(state.userPrompt || '');
-      // Clear the saved state after restoring
-      sessionStorage.removeItem('userState');
-      // Close the paywall if it's open
+      
+      // Close modals
       setShowPaywall(false);
+      
+      // Ensure any cached brand analysis results are displayed
+      if (state.brandProfileAnalyzed) {
+        // Add system message to chat history if not already present
+        const hasSystemMessage = chatHistory.some(msg => 
+          msg.type === 'result' && 
+          msg.content.includes("I understand your brand profile")
+        );
+        
+        if (!hasSystemMessage && state.uploadedImages?.length > 0) {
+          setChatHistory(prev => [
+            ...prev, 
+            {
+              id: `system-${Date.now()}`,
+              type: 'result',
+              content: "I understand your brand profile. Now, tell me what kind of ad you'd like to create.",
+              timestamp: Date.now(),
+              messageType: 'text'
+            } as ChatMessage
+          ]);
+        }
+      }
+      
+      // Clear any saved state
+      sessionStorage.removeItem('userState');
+      
+      console.log('App state restored after authentication');
     };
 
     // Add event listener for state restoration
@@ -127,7 +156,7 @@ export default function Home() {
     return () => {
       window.removeEventListener('authStateRestored', handleStateRestoration as EventListener);
     };
-  }, []);
+  }, [chatHistory]);
 
   // Save state before showing paywall
   const saveStateAndShowPaywall = () => {
@@ -411,6 +440,16 @@ export default function Home() {
     
     return null;
   }
+
+  // Add debugging logs to track authentication state
+  useEffect(() => {
+    console.log('Auth state in Home component:', { 
+      isAuthenticated, 
+      user: user ? `User ${user.id} (${user.email})` : 'No user', 
+      tokens, 
+      isLoading 
+    });
+  }, [isAuthenticated, user, tokens, isLoading]);
 
   return (
     <div 
