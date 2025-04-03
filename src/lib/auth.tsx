@@ -95,9 +95,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Add this at the beginning of the auth component
+  const cleanUrlAfterAuth = () => {
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        const hasCode = url.searchParams.has('code');
+        
+        if (hasCode) {
+          console.log('Cleaning URL after authentication');
+          url.searchParams.delete('code');
+          window.history.replaceState({}, '', url.toString());
+        }
+      } catch (error) {
+        console.error('Error cleaning URL:', error);
+      }
+    }
+  };
+
   // Initialize auth state
   useEffect(() => {
     let isMounted = true;
+    
+    // Clean the URL immediately when component mounts to avoid issues with reprocessing
+    cleanUrlAfterAuth();
+    
+    // Safety timeout to ensure loading state isn't stuck
+    const safetyTimeout = setTimeout(() => {
+      if (isMounted && isLoading) {
+        console.warn('Safety timeout triggered - forcing isLoading to false');
+        setIsLoading(false);
+      }
+    }, 10000); // 10 seconds maximum loading time
     
     const initAuth = async () => {
       try {
@@ -163,6 +192,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setTokensExpiryDate(userData.tokens_expiry_date);
                 setTier(userData.tier || 'Pioneer');
                 
+                // Critical: Ensure loading state is set to false after auth code exchange
+                setIsLoading(false);
+                
                 // If we had an auth code, restore saved state
                 if (hasAuthCode) {
                   const savedState = sessionStorage.getItem('userState');
@@ -171,10 +203,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     try {
                       const state = JSON.parse(savedState);
                       
-                      // Use a single consistent approach with setTimeout
-                      setTimeout(() => {
-                        if (isMounted) dispatchStateRestorationEvent(state);
-                      }, 200);
+                      // Use requestAnimationFrame to ensure DOM is updated
+                      requestAnimationFrame(() => {
+                        // Then use setTimeout to ensure React has processed state updates
+                        setTimeout(() => {
+                          if (isMounted) dispatchStateRestorationEvent(state);
+                        }, 100);
+                      });
                     } catch (error) {
                       console.error('Error parsing saved state after redirect:', error);
                     }
@@ -205,11 +240,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   });
                   setTokens(0);
                   setTier('Pioneer');
+                  
+                  // Critical: Ensure loading state is set to false after creating new user
+                  setIsLoading(false);
                 } catch (createError) {
                   console.error('Error creating user during code exchange:', createError);
+                  // Ensure loading state is false even on error
+                  if (isMounted) setIsLoading(false);
                 }
               }
+            } else {
+              // No session from code exchange
+              if (isMounted) setIsLoading(false);
             }
+          } else {
+            // No code parameter
+            if (isMounted) setIsLoading(false);
           }
         }
 
@@ -241,29 +287,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setTokensExpiryDate(userData.tokens_expiry_date);
             setTier(userData.tier || 'Pioneer');
             setIsAuthenticated(true);
-
-            // If we had an auth code, restore saved state
-            if (hasAuthCode) {
-              const savedState = sessionStorage.getItem('userState');
-              
-              if (savedState) {
-                try {
-                  const state = JSON.parse(savedState);
-                  
-                  // Use a single consistent approach with setTimeout
-                  setTimeout(() => {
-                    if (isMounted) dispatchStateRestorationEvent(state);
-                  }, 200);
-                } catch (error) {
-                  console.error('Error parsing saved state after redirect:', error);
-                }
-              }
-            }
           }
         }
+        
+        // Ensure loading state is set to false after all auth checks
+        if (isMounted) setIsLoading(false);
       } catch (error) {
         console.error('Error initializing auth:', error);
-      } finally {
+        // Ensure loading state is set to false even on error
         if (isMounted) setIsLoading(false);
       }
     };
@@ -324,15 +355,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   setTokens(0);
                   setTier('Pioneer');
                   setIsAuthenticated(true);
+                  setIsLoading(false);
                   
                   // Restore saved state if exists
                   const savedState = sessionStorage.getItem('userState');
                   if (savedState) {
                     try {
                       const state = JSON.parse(savedState);
-                      setTimeout(() => {
-                        if (isMounted) dispatchStateRestorationEvent(state);
-                      }, 200);
+                      requestAnimationFrame(() => {
+                        setTimeout(() => {
+                          if (isMounted) dispatchStateRestorationEvent(state);
+                        }, 100);
+                      });
                     } catch (error) {
                       console.error('Error parsing saved state:', error);
                     }
@@ -340,6 +374,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 }
               } catch (createError) {
                 console.error('Error in user creation process:', createError);
+                if (isMounted) setIsLoading(false);
               }
               
               return;
@@ -365,15 +400,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setTokensExpiryDate(userData.tokens_expiry_date);
               setTier(userData.tier || 'Pioneer');
               setIsAuthenticated(true);
+              setIsLoading(false);
 
               // Restore saved state if exists
               const savedState = sessionStorage.getItem('userState');
               if (savedState) {
                 try {
                   const state = JSON.parse(savedState);
-                  setTimeout(() => {
-                    if (isMounted) dispatchStateRestorationEvent(state);
-                  }, 200);
+                  requestAnimationFrame(() => {
+                    setTimeout(() => {
+                      if (isMounted) dispatchStateRestorationEvent(state);
+                    }, 100);
+                  });
                 } catch (error) {
                   console.error('Error parsing saved state:', error);
                 }
@@ -381,6 +419,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           } catch (error) {
             console.error('Error in onAuthStateChange handler:', error);
+            if (isMounted) setIsLoading(false);
           }
         } else if (event === 'SIGNED_OUT' && isMounted) {
           setUser(null);
@@ -388,12 +427,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setTokensExpiryDate(undefined);
           setTier('Pioneer');
           setIsAuthenticated(false);
+          setIsLoading(false);
         }
       }
     );
 
     return () => {
       isMounted = false;
+      clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
   }, []);

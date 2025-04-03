@@ -253,12 +253,15 @@ export default function Home() {
   
   // Show a full-screen loading state until authentication is resolved
   if (isLoading) {
+    console.log('Rendering loading spinner because isLoading is true');
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-black via-zinc-900 to-black">
         <LoadingSpinner variant="small" color="#ffffff" message="Loading..." />
       </div>
     );
   }
+  
+  console.log('Proceeding to render main app UI, isLoading:', isLoading);
   
   // Save state before showing paywall
   const saveStateAndShowPaywall = () => {
