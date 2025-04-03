@@ -352,7 +352,7 @@ Provide the analysis in a structured JSON format matching the BrandProfile inter
     const inputTokens = countTokens(systemPrompt) + countTokens(userPrompt);
     
     const response = await openai.chat.completions.create({
-      model: "gpt-4-vision-preview",
+      model: "gpt-4o",
       messages: [
         {
           role: "system",
