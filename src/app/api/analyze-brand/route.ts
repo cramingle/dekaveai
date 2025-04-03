@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
       messages: [
         {
           role: "system",
-          content: "You are a brand identity expert who analyzes visual brand elements and extracts key characteristics."
+          content: "You are a brand identity expert who analyzes visual brand elements and extracts key characteristics. When creating JSON responses, use camelCase for field names (e.g., brandStyle, colorPalette), not snake_case."
         },
         {
           role: "user",
@@ -42,7 +42,17 @@ export async function POST(req: NextRequest) {
 5. Target audience indicators
 6. Industry category
 
-Provide the analysis in a structured JSON format matching the BrandProfile interface.`
+Provide the analysis in a structured JSON format with these EXACT field names:
+{
+  "brandStyle": "string describing overall style",
+  "colorPalette": ["array of colors"],
+  "visualElements": ["array of elements"],
+  "moodAndTone": "string describing mood",
+  "targetAudience": "string describing audience",
+  "industryCategory": "string describing industry"
+}
+
+It's critical to use these exact camelCase field names.`
             },
             {
               type: "image_url",
@@ -56,8 +66,20 @@ Provide the analysis in a structured JSON format matching the BrandProfile inter
       max_tokens: 500
     });
     
-    // Parse and return the response
-    const brandProfile = JSON.parse(response.choices[0].message.content || "{}");
+    // Parse and return the response with field name transformation
+    const rawBrandProfile = JSON.parse(response.choices[0].message.content || "{}");
+    
+    // Transform snake_case field names to camelCase to match our interface
+    const brandProfile = {
+      brandStyle: rawBrandProfile.overall_brand_style_aesthetic || rawBrandProfile.brandStyle,
+      colorPalette: rawBrandProfile.color_palette || rawBrandProfile.colorPalette || [],
+      visualElements: rawBrandProfile.key_visual_elements_symbols || rawBrandProfile.visualElements || [],
+      moodAndTone: rawBrandProfile.mood_tone || rawBrandProfile.moodAndTone,
+      targetAudience: rawBrandProfile.target_audience_indicators || rawBrandProfile.targetAudience,
+      industryCategory: rawBrandProfile.industry_category || rawBrandProfile.industryCategory
+    };
+    
+    console.log('Mapped brand profile from AI response:', brandProfile);
     
     return new NextResponse(
       JSON.stringify(brandProfile),
