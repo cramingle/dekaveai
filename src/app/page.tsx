@@ -853,25 +853,31 @@ export default function Home() {
     return null;
   }
 
-  // Add a component to show staged image in the textarea
+  // Modify the StagedImagePreview component to make the image smaller
   const StagedImagePreview = () => {
     if (!stagedImage) return null;
     
     return (
-      <div className="relative mt-2 mb-3 rounded-lg overflow-hidden border border-white/20">
-        <img 
-          src={stagedImage} 
-          alt="Staged image" 
-          className="w-full max-h-40 object-cover"
-        />
-        <button
-          onClick={() => setStagedImage(null)}
-          className="absolute top-2 right-2 bg-black/70 hover:bg-black/90 text-white rounded-full p-1"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-          </svg>
-        </button>
+      <div className="flex justify-start my-2">
+        <div className="relative rounded-lg overflow-hidden border border-white/20" style={{ 
+          width: windowWidth < 640 ? '80px' : '100px',
+          height: windowWidth < 640 ? '80px' : '100px',
+        }}>
+          <img 
+            src={stagedImage} 
+            alt="Staged image" 
+            className="w-full h-full object-cover"
+          />
+          <button
+            onClick={() => setStagedImage(null)}
+            className="absolute top-1 right-1 bg-black/70 hover:bg-black/90 text-white rounded-full p-1"
+            style={{ width: '18px', height: '18px' }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
       </div>
     );
   };
