@@ -46,18 +46,32 @@ export async function getUserData(userId: string): Promise<UserData | null> {
 }
 
 // Helper function to update user tokens
-export async function updateUserTokens(userId: string, tokens: number): Promise<boolean> {
-  const { error } = await supabase
-    .from('users')
-    .update({ tokens })
-    .eq('id', userId);
-
-  if (error) {
+export async function updateUserTokens(userId: string, newTokenCount: number): Promise<boolean> {
+  try {
+    // In free mode, store tokens in localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('dekave_temp_tokens', newTokenCount.toString());
+      return true;
+    }
+    
+    // Commented out Supabase implementation
+    /*
+    const { error } = await supabase
+      .from('users')
+      .update({ tokens: newTokenCount })
+      .eq('id', userId);
+      
+    if (error) {
+      console.error('Error updating user tokens:', error);
+      return false;
+    }
+    */
+    
+    return true;
+  } catch (error) {
     console.error('Error updating user tokens:', error);
     return false;
   }
-
-  return true;
 }
 
 // Helper function to create a new user
@@ -133,6 +147,17 @@ export async function updateUserTokensWithExpiry(
  */
 export async function getUserTokens(userId: string): Promise<number> {
   try {
+    // In free mode, get tokens from localStorage
+    if (typeof window !== 'undefined') {
+      const storedTokens = localStorage.getItem('dekave_temp_tokens');
+      if (storedTokens) {
+        return parseInt(storedTokens, 10);
+      }
+      return 100000; // Default token amount in free mode
+    }
+    
+    // Commented out Supabase implementation
+    /*
     const { data, error } = await supabase
       .from('users')
       .select('tokens')
@@ -145,9 +170,12 @@ export async function getUserTokens(userId: string): Promise<number> {
     }
     
     return data?.tokens || 0;
+    */
+    
+    return 100000; // Default token amount in free mode
   } catch (error) {
     console.error('Error getting user tokens:', error);
-    return 0;
+    return 100000; // Default token amount in free mode
   }
 }
 
@@ -181,6 +209,16 @@ export async function storeConversationContext(userId: string, context: string):
  */
 export async function getUserConversation(userId: string): Promise<string | null> {
   try {
+    // In free mode, use localStorage instead of Supabase
+    if (typeof window !== 'undefined') {
+      const storedConversation = localStorage.getItem(`dekave_conversation_${userId}`);
+      if (storedConversation) {
+        return storedConversation;
+      }
+    }
+    
+    // Commented out Supabase implementation
+    /*
     const { data, error } = await supabase
       .from('users')
       .select('conversation_context')
@@ -193,6 +231,9 @@ export async function getUserConversation(userId: string): Promise<string | null
     }
     
     return data?.conversation_context || null;
+    */
+    
+    return null;
   } catch (error) {
     console.error('Error getting user conversation:', error);
     return null;
@@ -204,6 +245,15 @@ export async function getUserConversation(userId: string): Promise<string | null
  */
 export async function saveUserConversation(userId: string, context: string): Promise<boolean> {
   try {
+    // In free mode, use localStorage instead of Supabase
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`dekave_conversation_${userId}`, context);
+      localStorage.setItem(`dekave_conversation_lastused_${userId}`, new Date().toISOString());
+      return true;
+    }
+    
+    // Commented out Supabase implementation
+    /*
     const { error } = await supabase
       .from('users')
       .update({ 
@@ -216,6 +266,7 @@ export async function saveUserConversation(userId: string, context: string): Pro
       console.error('Error saving user conversation:', error);
       return false;
     }
+    */
 
     return true;
   } catch (error) {
